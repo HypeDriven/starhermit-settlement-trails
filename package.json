@@ -1,0 +1,12 @@
+{
+  "name": "settlement-trails",
+  "version": "1.0.0",
+  "description": "Settlement Trails — a cozy low-poly settlement builder for the browser.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

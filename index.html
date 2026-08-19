@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c2a22">
+<title>Settlement Trails</title>
+<meta name="description" content="Settlement Trails — a cozy settlement builder. Place homes, roads and services, keep residents happy, fulfil trade orders.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏡</text></svg>">
+</head>
+<body>
+<a class="skip-link" href="#toolbox">Skip to build tools</a>
+<div id="app">
+
+  <!-- ===== Title / home ===== -->
+  <section id="screen-title" class="screen active" aria-labelledby="title-heading">
+    <div class="title-card">
+      <h1 id="title-heading">Settlement <span class="accent">Trails</span></h1>
+      <p class="tagline">A cozy low-poly settlement builder spanning river and hills.</p>
+      <div class="title-actions">
+        <button id="btn-play" class="btn primary big">▶ Play</button>
+        <button id="btn-daily" class="btn">📅 Daily Trail <span id="daily-status" class="pill"></span></button>
+        <button id="btn-journey" class="btn">🗺 Journey <span id="journey-status" class="pill"></span></button>
+      </div>
+      <div class="title-secondary">
+        <button id="btn-practice" class="btn small">Practice</button>
+        <button id="btn-challenge" class="btn small">Challenges</button>
+        <button id="btn-learn" class="btn small">Learn</button>
+        <button id="btn-scores" class="btn small">Scores</button>
+        <button id="btn-help" class="btn small">Help</button>
+        <button id="btn-settings" class="btn small">Settings</button>
+      </div>
+      <p id="profile-line" class="profile-line"></p>
+      <button id="btn-resume" class="btn ghost hidden">↩ Resume saved settlement</button>
+    </div>
+  </section>
+
+  <!-- ===== Mode setup / pickers ===== -->
+  <section id="screen-picker" class="screen" aria-labelledby="picker-heading">
+    <div class="panel wide">
+      <header class="panel-head">
+        <button class="btn back" data-back>← Back</button>
+        <h2 id="picker-heading">Choose</h2>
+      </header>
+      <div id="picker-body" class="picker-body"></div>
+    </div>
+  </section>
+
+  <!-- ===== Game ===== -->
+  <main id="screen-game" class="screen" aria-label="Settlement playfield">
+    <div id="canvas-wrap" aria-hidden="true"></div>
+
+    <header id="hud-top" class="hud-bar" aria-label="Status">
+      <div class="hud-group" id="hud-resources" role="status" aria-label="Resources">
+        <span class="res" title="Coins">🪙 <b id="res-coins">0</b></span>
+        <span class="res" title="Wood">🪵 <b id="res-wood">0</b></span>
+        <span class="res" title="Food">🌾 <b id="res-food">0</b></span>
+        <span class="res" title="Population">👥 <b id="res-pop">0</b></span>
+        <span class="res" title="Happiness">😊 <b id="res-happy">–</b></span>
+      </div>
+      <div class="hud-group center">
+        <span id="hud-day" class="day-pill">Day 0 / 30</span>
+        <span id="hud-mode" class="pill"></span>
+      </div>
+      <div class="hud-group">
+        <button id="btn-speed" class="btn icon" title="Game speed (Space)" aria-label="Game speed">▶</button>
+        <button id="btn-undo" class="btn icon hidden" title="Undo (U)" aria-label="Undo">↩</button>
+        <button id="btn-hint" class="btn icon" title="Hint (H)" aria-label="Hint">💡</button>
+        <button id="btn-pause" class="btn icon" title="Pause (Esc)" aria-label="Pause">⏸</button>
+      </div>
+    </header>
+
+    <aside id="rail-left" class="rail" aria-labelledby="objective-heading">
+      <h2 id="objective-heading" class="rail-title">Objective</h2>
+      <p id="objective-text"></p>
+      <div id="objective-progress" class="objective-progress"></div>
+      <h3 class="rail-sub">Trade orders</h3>
+      <ul id="orders-list" class="orders-list"></ul>
+      <h3 class="rail-sub">Event log</h3>
+      <ol id="event-log" class="event-log" aria-label="Recent events"></ol>
+    </aside>
+
+    <aside id="rail-right" class="rail" aria-labelledby="inspector-heading">
+      <h2 id="inspector-heading" class="rail-title">Inspector</h2>
+      <div id="inspector-body"><p class="muted">Select a tile or building.</p></div>
+    </aside>
+
+    <div id="tutorial-card" class="tutorial-card hidden" role="note" aria-label="Lesson step"></div>
+
+    <nav id="toolbox" class="toolbox" aria-label="Build tools"></nav>
+
+    <button id="rail-left-toggle" class="rail-toggle left" aria-label="Toggle objectives panel">☰</button>
+    <button id="rail-right-toggle" class="rail-toggle right" aria-label="Toggle inspector panel">ℹ</button>
+  </main>
+
+  <!-- ===== Pause ===== -->
+  <section id="screen-pause" class="screen overlay" aria-labelledby="pause-heading" role="dialog" aria-modal="true">
+    <div class="panel">
+      <h2 id="pause-heading">Paused</h2>
+      <div class="stack">
+        <button id="btn-resume-game" class="btn primary">Resume</button>
+        <button id="btn-pause-settings" class="btn">Settings</button>
+        <button id="btn-pause-help" class="btn">Help</button>
+        <button id="btn-restart" class="btn">Restart scenario</button>
+        <button id="btn-quit" class="btn danger">Leave settlement</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Results ===== -->
+  <section id="screen-results" class="screen overlay" aria-labelledby="results-heading" role="dialog" aria-modal="true">
+    <div class="panel wide">
+      <h2 id="results-heading">Results</h2>
+      <p id="results-sub" class="muted"></p>
+      <div id="score-breakdown" class="score-breakdown"></div>
+      <div id="results-achievements" class="ach-row"></div>
+      <div id="results-compare" class="muted"></div>
+      <div class="row-actions">
+        <button id="btn-retry" class="btn primary">Retry</button>
+        <button id="btn-next" class="btn hidden">Next stage →</button>
+        <button id="btn-results-scores" class="btn">Scoreboard</button>
+        <button id="btn-results-home" class="btn">Home</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Settings ===== -->
+  <section id="screen-settings" class="screen overlay" aria-labelledby="settings-heading" role="dialog" aria-modal="true">
+    <div class="panel wide settings-panel">
+      <header class="panel-head">
+        <h2 id="settings-heading">Settings</h2>
+        <button class="btn back" id="btn-settings-close">✕ Close</button>
+      </header>
+      <div id="settings-body" class="settings-body"></div>
+    </div>
+  </section>
+
+  <!-- ===== Help ===== -->
+  <section id="screen-help" class="screen overlay" aria-labelledby="help-heading" role="dialog" aria-modal="true">
+    <div class="panel wide">
+      <header class="panel-head">
+        <h2 id="help-heading">How to play</h2>
+        <button class="btn back" id="btn-help-close">✕ Close</button>
+      </header>
+      <div id="help-body" class="help-body"></div>
+    </div>
+  </section>
+
+  <!-- ===== Scores ===== -->
+  <section id="screen-scores" class="screen overlay" aria-labelledby="scores-heading" role="dialog" aria-modal="true">
+    <div class="panel wide">
+      <header class="panel-head">
+        <h2 id="scores-heading">Scoreboards</h2>
+        <button class="btn back" id="btn-scores-close">✕ Close</button>
+      </header>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-board="global" role="tab" aria-selected="true">Global</button>
+        <button class="tab" data-board="daily" role="tab" aria-selected="false">Daily</button>
+        <button class="tab" data-board="friends" role="tab" aria-selected="false">Friends</button>
+      </div>
+      <ol id="scores-list" class="scores-list"></ol>
+      <p class="muted" id="scores-note"></p>
+    </div>
+  </section>
+
+  <!-- ===== Countdown / toast ===== -->
+  <div id="countdown" class="countdown hidden" aria-hidden="true"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <!-- Accessibility mirrors -->
+  <div id="board-sr" class="sr-only" role="status" aria-live="polite"></div>
+  <div id="alert-sr" class="sr-only" role="alert"></div>
+
+  <div id="compat-warning" class="panel hidden" role="alert">
+    <h2>3D unavailable</h2>
+    <p>Your browser could not create a WebGL context. Your progress is safe; try a different browser or enable hardware acceleration.</p>
+    <button class="btn" onclick="location.reload()">Retry</button>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
