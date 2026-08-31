@@ -4,6 +4,30 @@
 
 import { RngStream } from './rng.js';
 
+// Authored one-shot samples (sfx/<name>.opus, see sfx/manifest.json) mapped to
+// the logical events handled by play(). Synthesis below remains the fallback
+// while a sample is loading or if it fails to fetch/decode.
+const SFX_SAMPLES = {
+  ui: 'ui-click',
+  select: 'ui-select',
+  place: 'build-place',
+  'place-road': 'road-place',
+  demolish: 'demolish-crash',
+  invalid: 'invalid-buzz',
+  coin: 'coin-chime',
+  fulfill: 'order-fulfill',
+  order: 'order-new',
+  day: 'day-tick',
+  grow: 'plant-grow',
+  leave: 'settler-leave',
+  shortage: 'shortage-warn',
+  win: 'victory-fanfare',
+  lose: 'defeat-drone',
+  achievement: 'achievement-unlock',
+  pause: 'pause-tap',
+  hint: 'hint-sparkle',
+};
+
 export class AudioEngine {
   constructor(settings) {
     this.settings = settings;
@@ -14,6 +38,7 @@ export class AudioEngine {
     this.musicNodes = null;
     this.rng = new RngStream(0xa0d10, 'audio');
     this.intensity = 0; // 0..1 adaptive music intensity
+    this._samples = new Map(); // basename -> AudioBuffer | null (failed) | Promise (loading)
   }
 
   // Must be called from a user gesture.
@@ -85,10 +110,44 @@ export class AudioEngine {
     return src;
   }
 
+  // ---- authored samples -------------------------------------------------------
+  // Lazy-fetch/decode/cache sfx/<name>.opus. Only runs after the user-gesture
+  // unlock (start()); returns the AudioBuffer once ready, otherwise null.
+  _loadSample(name) {
+    const cached = this._samples.get(name);
+    if (cached !== undefined) return cached instanceof AudioBuffer ? cached : null;
+    const job = (async () => {
+      try {
+        const res = await fetch(`sfx/${name}.opus`);
+        if (!res.ok) throw new Error(`sfx ${name}: ${res.status}`);
+        const data = await res.arrayBuffer();
+        const buf = await this.ctx.decodeAudioData(data);
+        this._samples.set(name, buf);
+      } catch {
+        this._samples.set(name, null); // permanent fallback to synthesis
+      }
+    })();
+    this._samples.set(name, job);
+    return null;
+  }
+
+  _playSample(buf) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.buses.effects); // effects bus carries mute/volume settings
+    src.start();
+  }
+
   // ---- event mapping ---------------------------------------------------------
   // variant: integer seed for pitch randomization (replay-consistent).
   play(name, variant = 0) {
     if (!this.started || !this.ctx || this.ctx.state !== 'running') return;
+    const sampleName = SFX_SAMPLES[name];
+    if (sampleName) {
+      const buf = this._loadSample(sampleName);
+      if (buf) { this._playSample(buf); return; }
+      // Fall through to synthesis while the sample is loading or unavailable.
+    }
     const rng = new RngStream((0xa0d10 + variant * 7919) >>> 0, 'fx');
     const t = this.ctx.currentTime;
     const pv = 1 + (rng.float() - 0.5) * 0.12; // pitch variant

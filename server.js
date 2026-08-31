@@ -20,6 +20,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.opus': 'audio/ogg',
   '.md': 'text/markdown; charset=utf-8',
 };
 

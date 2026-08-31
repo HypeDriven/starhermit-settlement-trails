@@ -1,0 +1,110 @@
+[
+  {
+    "name": "ui-click",
+    "seconds": 1,
+    "prompt": "Single soft UI click, a short dry tap of a fingertip on a small wooden button, gentle and rounded, no reverb.",
+    "event": "play:ui"
+  },
+  {
+    "name": "ui-select",
+    "seconds": 1,
+    "prompt": "Soft confirm blip, a mellow plucked kalimba note rising slightly, warm and friendly, very short decay.",
+    "event": "play:select"
+  },
+  {
+    "name": "build-place",
+    "seconds": 1,
+    "prompt": "Wooden building being set down: a solid low thud of a timber frame landing on packed dirt, with a brief creak of wood joints.",
+    "event": "play:place"
+  },
+  {
+    "name": "road-place",
+    "seconds": 1,
+    "prompt": "Gravel path being laid: a short scattering pour of small stones and sand onto the ground, gritty and dry.",
+    "event": "play:place-road"
+  },
+  {
+    "name": "demolish-crash",
+    "seconds": 2,
+    "prompt": "Small wooden structure collapsing: cracking planks, a muffled crash of timber and thatch tumbling down, dusty and low.",
+    "event": "play:demolish"
+  },
+  {
+    "name": "invalid-buzz",
+    "seconds": 1,
+    "prompt": "Dull error knock: two quick muted thumps on a hollow wooden box, flat and discouraging, no pitch glide.",
+    "event": "play:invalid"
+  },
+  {
+    "name": "coin-chime",
+    "seconds": 1,
+    "prompt": "A few small gold coins dropping into a coin purse, bright metallic clinks with a tiny jingle, light and cheerful.",
+    "event": "play:coin"
+  },
+  {
+    "name": "order-fulfill",
+    "seconds": 2,
+    "prompt": "Trade order completed: a satisfying hand bell ding followed by the rustle of goods sacks being handed over, rewarding tone.",
+    "event": "play:fulfill"
+  },
+  {
+    "name": "order-new",
+    "seconds": 1,
+    "prompt": "New trade order arriving: a quick paper unfurl and a single soft messenger bell note, crisp and attentive.",
+    "event": "play:order"
+  },
+  {
+    "name": "day-tick",
+    "seconds": 1,
+    "prompt": "Dawn marker: a single delicate tap on a small brass handbell, airy and quiet, like morning light arriving.",
+    "event": "play:day"
+  },
+  {
+    "name": "plant-grow",
+    "seconds": 1,
+    "prompt": "Crop sprouting: a soft leafy rustle with a faint upward chirp of a small bird, fresh and organic.",
+    "event": "play:grow"
+  },
+  {
+    "name": "settler-leave",
+    "seconds": 1,
+    "prompt": "Resident departing: a soft sigh of wind through tall grass with a single low wooden door knock, wistful and subdued.",
+    "event": "play:leave"
+  },
+  {
+    "name": "shortage-warn",
+    "seconds": 2,
+    "prompt": "Supply shortage warning: a low hollow wooden tocsin knock repeated twice slowly, somber and cautionary, no harshness.",
+    "event": "play:shortage"
+  },
+  {
+    "name": "victory-fanfare",
+    "seconds": 3,
+    "prompt": "Settlement victory: a short cheerful fanfare of wooden flutes and a hand drum roll ending on a bright bell, warm folk style.",
+    "event": "play:win"
+  },
+  {
+    "name": "defeat-drone",
+    "seconds": 3,
+    "prompt": "Settlement lost: a slow descending phrase on a low wooden flute over a soft muffled drum, melancholic but gentle.",
+    "event": "play:lose"
+  },
+  {
+    "name": "achievement-unlock",
+    "seconds": 2,
+    "prompt": "Achievement unlocked: a sparkling glockenspiel arpeggio of four rising notes with a light shimmer, celebratory and bright.",
+    "event": "play:achievement"
+  },
+  {
+    "name": "pause-tap",
+    "seconds": 1,
+    "prompt": "Game paused: a single muted fingertip tap on a clay pot, soft and neutral, very short.",
+    "event": "play:pause"
+  },
+  {
+    "name": "hint-sparkle",
+    "seconds": 1,
+    "prompt": "Hint revealed: a tiny glimmering chime, like a small glass bell flicked once, delicate and curious.",
+    "event": "play:hint"
+  }
+]
