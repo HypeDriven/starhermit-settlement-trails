@@ -288,7 +288,7 @@ kbd {
   .hud-bar { flex-wrap: wrap; }
   .hud-group.center { order: 3; width: 100%; justify-content: center; }
   .rail-toggle { top: 5.2rem; }
-  .toolbox { gap: .3rem; padding: .35rem; }
+  .toolbox { gap: .3rem; padding: .35rem; flex-wrap: wrap; justify-content: center; }
   .tool { min-width: 48px; min-height: 48px; }
   .tool .nm { display: none; }
   .rail { top: auto; bottom: 6.6rem; max-height: 42vh; }
