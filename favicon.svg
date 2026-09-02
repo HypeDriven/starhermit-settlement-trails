@@ -1,4 +1,1 @@
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='hsl(52 60% 55%)'/><stop offset='1' stop-color='hsl(6 60% 40%)'/></linearGradient></defs>
-<rect width='64' height='64' rx='14' fill='url(#g)'/>
-<text x='32' y='44' font-size='34' text-anchor='middle' fill='#ffffff' font-family='Verdana,sans-serif' font-weight='bold'>S</text>
-</svg>
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='13' fill='#1c2a22'/><path d='M28 46 L36 46 L44 64 L20 64 Z' fill='#b8c2ae'/><rect x='24' y='28' width='16' height='18' fill='#f2ede0'/><path d='M20 28 L32 16 L44 28 Z' fill='#ffd54a'/></svg>
