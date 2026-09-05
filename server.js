@@ -33,22 +33,51 @@ function json(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
+// Resolve the authoritative content definition for a submitted content id.
+// Shipped content (daily / journey / challenge / tutorial) is deterministic and
+// immutable; a competitive claim must be replayed against that definition, never
+// against a client-supplied materialized view. Returns { def, match }.
+function authoritativeContentDef(lib, id) {
+  const dm = /^daily-(\d{4}-\d{2}-\d{2})$/.exec(String(id || ''));
+  if (dm) return { def: lib.dailyContent(dm[1]), match: true };
+  const jm = /^journey-(\d+)$/.exec(String(id || ''));
+  if (jm) {
+    const n = Number(jm[1]);
+    if (Number.isInteger(n) && n >= 0 && n < lib.JOURNEY_STAGES.length) {
+      return { def: lib.JOURNEY_STAGES[n], match: true };
+    }
+  }
+  const ch = (lib.CHALLENGES || []).find(c => c.id === id);
+  if (ch) return { def: ch, match: true };
+  const tut = (lib.TUTORIALS || []).find(t => t.id === id);
+  if (tut) return { def: tut, match: true };
+  return { def: null, match: false };
+}
+
 // Score claim validation: deterministic replay of the submitted input log.
 async function validateScoreClaim(payload) {
   if (!payload || typeof payload !== 'object') return { ok: false, reason: 'bad-payload' };
-  const { score, replay } = payload;
+  const { score, contentId, seed, contentVersion } = payload;
   if (!Number.isFinite(score) || score < 0 || score > 100000) return { ok: false, reason: 'implausible' };
+  const replay = payload.replay;
   if (!replay) return { ok: false, reason: 'no-replay' };
   try {
     const { Session } = await import('./js/session.js');
-    const R = await import('./js/rules.js');
-    if (!replay.materialized) return { ok: false, reason: 'no-content' };
-    const check = Session.validateReplay(replay);
+    const C = await import('./js/content.js');
+    // Rebuild the authoritative content from the immutable content id; the
+    // client's own materialized view is never trusted for competitive boards.
+    const { def, match } = authoritativeContentDef(C, contentId ?? replay.contentId);
+    if (!match || !def) return { ok: false, reason: 'unknown-content' };
+    if ((seed >>> 0) !== (def.seed >>> 0)) return { ok: false, reason: 'seed-mismatch' };
+    if (contentVersion !== undefined && contentVersion !== def.version) {
+      return { ok: false, reason: 'content-version-mismatch' };
+    }
+    // Replay against the authoritative definition, not the client's.
+    const envelope = { ...replay, materialized: C.materialize(def) };
+    const check = Session.validateReplay(envelope);
     if (!check.ok) return { ok: false, reason: 'replay-' + check.reason };
     // Score must match the deterministic replay exactly.
-    const state = R.createGame(replay.materialized);
-    void state;
-    if (replay.result.score.total !== score) return { ok: false, reason: 'score-mismatch' };
+    if (envelope.result.score.total !== score) return { ok: false, reason: 'score-mismatch' };
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: 'validator-error' };
@@ -76,8 +105,9 @@ async function handleApi(req, res, url) {
     }
     const verdict = await validateScoreClaim(payload);
     if (!verdict.ok) {
-      // Unverifiable scores are still listed but marked casual.
-      return json(res, 202, { ok: true, casual: true, reason: verdict.reason });
+      // Honest rejection: an unverifiable score is NOT stored, so don't tell the
+      // client it succeeded. The hosted client surfaces this as unavailable.
+      return json(res, 422, { ok: false, reason: verdict.reason });
     }
     entries.push({
       name: String(payload.name || 'Guest').slice(0, 24),
@@ -88,9 +118,20 @@ async function handleApi(req, res, url) {
       assists: Array.isArray(payload.assists) ? payload.assists.slice(0, 4) : [],
       durationMs: payload.durationMs | 0,
       sessionId: String(payload.sessionId || ''),
+      won: !!payload.won,
+      invalidActions: (payload.stats && payload.stats.invalidActions) | 0,
+      elapsedTicks: payload.durationMs | 0,
       when: Date.now(),
     });
-    entries.sort((a, b) => b.score - a.score);
+    // Spec §2 tie-break: primary objective completion, fewer invalid actions,
+    // lower authoritative elapsed time, then stable session identifier.
+    entries.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.won !== b.won) return (b.won ? 1 : 0) - (a.won ? 1 : 0);
+      if (a.invalidActions !== b.invalidActions) return a.invalidActions - b.invalidActions;
+      if (a.elapsedTicks !== b.elapsedTicks) return a.elapsedTicks - b.elapsedTicks;
+      return String(a.sessionId).localeCompare(String(b.sessionId));
+    });
     boards.set(boardName, entries.slice(0, 200));
     const rank = entries.findIndex(e => e.sessionId === String(payload.sessionId)) + 1;
     return json(res, 200, { ok: true, rank });

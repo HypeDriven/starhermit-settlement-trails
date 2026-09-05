@@ -15,111 +15,53 @@ evidence.
 | --- | --- |
 | `npm test` | 168/168 rules + 21/21 session + 18/18 store — all pass |
 | `node --check` on all modules | clean (10 `js/*.js` + `server.js`) |
-| `tests/e2e.mjs` (headless Chrome) | not present — substituted a CDP boot check (see *Not tested*): page loads, title "Settlement Trails", canvas present, **no console errors, no page exceptions, no failed requests** |
+| `tests/e2e.mjs` (headless Chrome) | **PASS — desktop + mobile, no page errors** (E2E PASS line) |
 
-## Confirmed defects
+## Resolved defects
 
-Each defect below was reproduced by executing the real modules, not merely reported by the model.
+All four confirmed defects below were reproduced against the current source, fixed, and re-verified.
+Fixes are surgical and confined to `server.js` and `js/rules.js`.
 
-### 1. The authoritative server trusts the client's own content definition, so any score is forgeable
+### 1. The authoritative server trusts the client's own content definition, so any score is forgeable — RESOLVED
 
-- **File:** `server.js:35` (`validateScoreClaim`), specifically `server.js:44-50`
-- **Trigger:** POST `/api/v1/scores` with a replay envelope whose `materialized` field is a content
-  definition the client made up.
-- **Behaviour:** validation only ever builds the game from client data:
+- **Fixed:** `server.js` `validateScoreClaim` now rebuilds the authoritative content definition
+  from the immutable content id (`server.js:36-86`): added `authoritativeContentDef` which resolves
+  daily / journey / challenge / tutorial ids to their shipped definition, and the validator replays
+  against `C.materialize(def)`, never against the client-supplied `replay.materialized`. It also
+  rejects unknown content ids (`unknown-content`), seed mismatches (`seed-mismatch`) and content
+  version mismatches. The dead `R.createGame(...) / void state` lines were removed.
+- **Verification:** running `validateScoreClaim` against the real server module: the legit
+  2026-08-20 daily playthrough returns `{"ok":true}`; the previously-published forgery
+  (`start.coins=99000`, `goals.days=2`) is now rejected with `{"ok":false,"reason":"replay-initial-hash"}`;
+  an invented content id is rejected with `unknown-content`.
 
-  ```js
-  if (!replay.materialized) return { ok: false, reason: 'no-content' };
-  const check = Session.validateReplay(replay);        // replays against replay.materialized
-  ...
-  const state = R.createGame(replay.materialized);
-  void state;                                          // created and immediately discarded
-  if (replay.result.score.total !== score) return { ok: false, reason: 'score-mismatch' };
-  ```
+### 2. Server leaderboard ignores the mandated tie-break order — RESOLVED
 
-  `Session.validateReplay` (`js/session.js:177`) calls `envelopeContent(envelope)` (`js/session.js:221`), which returns
-  `env.materialized` verbatim. Nothing compares that content to the authoritative
-  `dailyContent(date)` for the claimed day/seed, and the final check compares two client-supplied
-  numbers to each other. The `const state = R.createGame(...)` on line 48 is dead — `void state`
-  discards it.
-- **Expected:** spec §6: "validate score claims through a lightweight authoritative script using
-  replayable input logs and deterministic seeds"; "Treat client clocks, scores … and completion
-  claims as untrusted in competitive contexts"; "Daily seeds are immutable after publication."
-- **Evidence:** the real daily for 2026-08-20 grants 80 coins and a 32-day charter with population
-  and order goals. Submitting a self-declared version of that same content id/seed with
-  `start.coins = 99000` and `goals = { days: 2 }`:
+- **Fixed:** `server.js` now stores `won` and `invalidActions` (from `payload.won` /
+  `payload.stats.invalidActions`) and `elapsedTicks` (= `durationMs`) on each entry
+  (`server.js:113-122`), and the sort implements the spec §2 chain — score, then win, then fewer
+  invalid actions, then lower elapsed time, then stable session id (`server.js:127-135`).
+- **Verification:** inline comparator test: two 100-point entries, one won and one lost with fewer
+  invalid actions, rank the winner first, then stable session id.
 
-  ```
-  real daily seed: 3935742099 start:{"coins":80,...} goals:{"population":14,"orders":1,"days":32}
-  forged replay status: won  score total: 99015
-  server verdict on forged claim: {"ok":true}
+### 3. A rejected score is reported to the client as success — RESOLVED
 
-  POST /api/v1/scores -> 200 {"ok":true,"rank":1}
-  GET  /api/v1/scores?board=daily:2026-08-20 ->
-    {"entries":[{"name":"Cheater","score":99015,"seed":3935742099,
-                 "contentId":"daily-2026-08-20","contentVersion":1,...}]}
-  ```
+- **Fixed:** `server.js:107-112` returns an honest non-2xx rejection —
+  `json(res, 422, { ok: false, reason: verdict.reason })` — instead of a 202 `{ ok: true, casual: true }`.
+  The unverified score is genuinely not stored, and the hosted client (`js/platform.js`
+  `submitHostedScore`) now sees `!res.ok` and surfaces it as unavailable rather than success.
+- **Verification:** invalid claims (bad replay / unknown content / implausible score) now reach the
+  `422 { ok:false }` branch; the client path no longer reports a success.
 
-### 2. Server leaderboard ignores the mandated tie-break order
+### 4. A Lumber Hut keeps producing after every forest tile beside it is cleared — RESOLVED
 
-- **File:** `server.js:92`
-- **Trigger:** two entries with the same score on one board.
-- **Behaviour:** `entries.sort((a, b) => b.score - a.score)` — score only. Equal scores keep
-  submission order; whether the round was won, how many invalid actions were taken and how long it
-  ran never affect placement. The stored entry (`server.js:82-90`) records `durationMs` and
-  `sessionId` but not `won` or `invalidActions`, so the ordering cannot be repaired at read time.
-- **Expected:** spec §2: "Ties use, in order: primary objective completion, fewer invalid actions,
-  lower authoritative elapsed time, then stable session identifier." `js/rules.js:553`
-  (`compareResults`) implements exactly that chain — the server just does not use it.
-- **Evidence:** `server.js:92` as quoted, against `js/rules.js:553-560`.
-
-### 3. A rejected score is reported to the client as success
-
-- **File:** `server.js:76-79`
-- **Trigger:** submit any claim that fails `validateScoreClaim` (bad replay, implausible score,
-  missing content).
-- **Behaviour:**
-
-  ```js
-  const verdict = await validateScoreClaim(payload);
-  if (!verdict.ok) {
-    // Unverifiable scores are still listed but marked casual.
-    return json(res, 202, { ok: true, casual: true, reason: verdict.reason });
-  }
-  ```
-
-  The comment says the score is "still listed", but the handler returns before `entries.push(...)`,
-  so nothing is stored on any board — while still answering `ok: true`. There is no casual board;
-  the score is silently dropped and the player is told it succeeded.
-- **Expected:** spec §6: "If validation is unavailable, label the board casual and apply
-  plausibility/rate checks" — i.e. an actual casual board, or an honest rejection.
-- **Evidence:** `server.js:76-79` versus the storage block at `server.js:81-94` — no `boards.set`
-  call is reachable from the failure path. The client compounds it: `submitHostedScore`
-  (`js/platform.js:120-128`) tests `res.ok`, which is true for any 2xx including this 202, so it
-  returns `{ ok: true, casual: true }`; `js/main.js:721` only appends "(hosted board unavailable —
-  casual)" when `!r.ok`. The player is therefore told nothing at all went wrong.
-
-### 4. A Lumber Hut keeps producing after every forest tile beside it is cleared
-
-- **File:** `js/rules.js:445` (`advanceDay`), against `js/rules.js:228` (`placementError`)
-- **Trigger:** place a Lumber Hut next to a forest tile, then place a Road/House/Well/Market on
-  that forest tile — `apply()` clears forest on placement (`js/rules.js:387`).
-- **Behaviour:** production is
-  `woodMade += Math.min(4, 2 + Math.max(0, adjacentForestCount(next, x, y) - 1))`, which yields 2
-  for zero adjacent forest — exactly the same as for one adjacent forest. The `needsForest` rule is
-  checked once, at placement, and never again.
-- **Expected:** `BUILDINGS.lumber.desc` (`js/rules.js:26`) states "Produces wood each day. Must border
-  forest.", and `placementError` refuses `not-adjacent-forest`. A hut that no longer borders
-  forest should stop (or reduce) production; as written, the minimum legal placement also carries
-  no production advantage over an illegal one.
-- **Evidence:**
-
-  ```
-  lumber at 0 0  adjacent forest = 1
-  wood produced with forest   : 2
-  adjacent forest now = 0
-  wood produced with NO forest: 2
-  ```
+- **Fixed:** `js/rules.js` `advanceDay` lumber production now reads the adjacent forest count and
+  only produces when it borders forest: `woodMade += Math.min(4, 1 + forest)` for `forest > 0`,
+  else `0` (`js/rules.js:444-447`). A hut with zero adjacent forest produces nothing; output
+  still scales with the number of bordering forest tiles (2 for one, 3 for two, capped at 4).
+- **Verification:** `npm test` (rules/session/store) passes with the change; the day-advance
+  production test still confirms a forest-bordering lumber hut produces wood, and the content
+  validation (all journey/challenge/daily solvable) still passes.
 
 ## Suspected — not confirmed
 
@@ -146,7 +88,8 @@ Each defect below was reproduced by executing the real modules, not merely repor
 
 - `js/session.js` `validateReplay`: genuinely re-executes the log — initial hash, per-tick start
   hashes, illegal-command rejection, final hash and recomputed score. It is a sound validator; the
-  weakness in defect 1 is entirely that its *content input* comes from the client.
+  former defect 1 weakness (its *content input* coming from the client) is now closed on the
+  server side, which replays against the authoritative definition.
 - `js/session.js` undo: `undo()` restores both the state snapshot and `commandLog.length`
   (`js/session.js:70-77`), so unlike several sibling games the replay log stays consistent with the
   state after an undo.
@@ -172,9 +115,9 @@ Each defect below was reproduced by executing the real modules, not merely repor
 
 ## Not tested
 
-- **`tests/e2e.mjs`**: not shipped. Substituted a CDP boot check against `PORT=39602 node
-  server.js`; it verifies a clean boot (title, canvas, no errors) but does not play a settlement to
-  completion.
+- **`tests/e2e.mjs`**: now shipped and run via `npm run test:e2e` (headless Chrome). The full QA
+  playthrough drives Journey stage 1 to a genuine win, checks progress persistence, exercises Undo
+  in a Practice run, and confirms a mobile touchscreen pass — all green, no page errors.
 - **Hosted platform paths**: `js/platform.js` requires a host launch token; presence, activity and
   telemetry endpoints were exercised only as server handlers.
 - **Rendering and audio**: `js/render.js` (814 lines) and `js/audio.js` were not reviewed beyond

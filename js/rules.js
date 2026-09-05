@@ -442,7 +442,9 @@ export function advanceDay(state) {
       let f = 4 + (adjacentWaterCount(next, x, y) > 0 ? 1 : 0);
       foodMade += f;
     } else if (c.type === 'lumber') {
-      woodMade += Math.min(4, 2 + Math.max(0, adjacentForestCount(next, x, y) - 1));
+      // Must border forest to produce at all; output scales with forest count.
+      const forest = adjacentForestCount(next, x, y);
+      if (forest > 0) woodMade += Math.min(4, 1 + forest);
     } else if (c.type === 'market') {
       let servedHere = 0;
       for (const hs of findBuildings(next, 'house')) {

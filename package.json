@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js"
+    "test": "node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js",
+    "test:e2e": "node tests/e2e.mjs"
   },
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
 }
