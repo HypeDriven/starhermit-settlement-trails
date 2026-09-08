@@ -125,5 +125,40 @@ const content = C.materialize({
   ok(Session.validateReplay(env).ok, 'full game replay validates');
 }
 
+// --- event deltas survive the MAX_EVENTS cap (log front-trimming)
+{
+  const s = new Session(content);
+  // Fill the log to the cap with rejected commands (each appends an event).
+  for (let i = 0; i < 80; i++) s.submit({ type: 'place', x: -1, y: -1, building: 'road' });
+  ok(s.state.events.length === R.MAX_EVENTS, 'event log capped at MAX_EVENTS');
+  // Command path: the appended event must still be surfaced.
+  let seen = null;
+  s.onEvents = (evs) => { seen = evs; };
+  s.submit({ type: 'place', x: -2, y: -2, building: 'road' });
+  ok(seen && seen.length === 1 && seen[0].kind === 'invalid', 'command event delivered at log cap');
+  // Day-clock path: a day advance at cap must still emit its events.
+  seen = null;
+  s.setPaused(false);
+  const evs = s.update(5001);
+  ok(s.state.tick === 1, 'day advanced at log cap');
+  ok(evs.length > 0 && evs.every(e => e.tick === s.state.tick), 'day events delivered at log cap');
+}
+
+// Invalid actions affect state hashes and must remain replayable; result
+// metadata is derived from the replay rather than the claimed envelope.
+{
+  const s = new Session(content);
+  s.submit({type:'place', x:-2, y:-2, building:'road'});
+  const env = {...s.replayEnvelope(), materialized:content};
+  env.result.status = 'won';
+  env.result.stats = {invalidActions:0};
+  const verdict = Session.validateReplay(env);
+  ok(verdict.ok, 'invalid action replay accepted');
+  ok(verdict.result.status === 'active', 'terminal metadata derived from replay');
+  ok(verdict.result.stats.invalidActions === 1, 'invalid count derived from replay');
+  env.commands[0].invalid = false;
+  ok(!Session.validateReplay(env).ok, 'unflagged invalid command rejected');
+}
+
 console.log(`\nsession: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

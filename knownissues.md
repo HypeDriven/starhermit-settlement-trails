@@ -1,6 +1,39 @@
 # Known Issues — Settlement Trails
 
-QA pass 2026-08-20. Static review driven by Qwen3.8 27B on spark185 (OBLITERATED Q8_0, 262k ctx),
+## Review pass 2026-09-08 (Kimi Code CLI)
+
+Six further defects found by source review and fixed; each verified by unit tests,
+a targeted headless-Chrome smoke pass, and the full e2e suite:
+
+1. **Session event deltas broke once the event log hit the 60-event cap** — the log is
+   front-trimmed, so slicing by the old log length returned `[]`. In long games this
+   silently stopped HUD day updates, order toasts, day audio and per-day autosave.
+   Fixed in `js/session.js` (day events selected by tick; command events taken as the
+   appended tail). Regression test added in `tests/session.test.js`.
+2. **Countdown race/crash** — quitting during the start countdown threw a TypeError
+   (`state.session` null) and left the countdown number stuck over the title screen;
+   pausing during the countdown let it unpause the game behind the pause overlay.
+   Fixed in `js/main.js` (session-identity guard, pause-overlay check, countdown cleared
+   on quit).
+3. **Space/Enter double-fired** — `show()` focuses the speed button and toolbox buttons
+   keep focus after mouse clicks, so Enter/Space both ran the hotkey AND clicked the
+   focused button (e.g. every Enter also cycled game speed). The handler now blurs a
+   focused button and swallows the default for those keys so each press acts once.
+4. **Learn lesson 2 completed its first step after one house instead of two** — the
+   step-level `count: 2` was ignored (`advanceTutorial` read only `require.count`).
+5. **Learn-mode (tutorial) results were submitted to the scoreboards** — tutorials are
+   unranked like practice; excluded in `js/main.js` `handleTerminal`.
+6. **Leaderboard hardening/consistency** — the authoritative server now derives `won` /
+   `invalidActions` tie-break fields from the validated replay instead of client claims
+   (`server.js`), and the local board sort now implements the full spec §2 tie-break
+   chain including objective completion (`js/store.js`). Also: the hosted-board
+   rejection note now actually reaches the results screen, and scoreboard seed
+   formatting no longer crashes on entries without a seed (`js/ui.js`).
+
+Repo hygiene: added the root-instructions-mandated `LICENSE.md` (PolyForm
+Noncommercial 1.0.0, byte-identical to sibling repos).
+
+## QA pass 2026-08-20. Static review driven by Qwen3.8 27B on spark185 (OBLITERATED Q8_0, 262k ctx),
 alongside the game's own unit tests and a headless-Chrome boot check.
 
 Method note: broad "find the defects in this module" prompts to the review model mostly came back

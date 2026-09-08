@@ -76,9 +76,10 @@ async function validateScoreClaim(payload) {
     const envelope = { ...replay, materialized: C.materialize(def) };
     const check = Session.validateReplay(envelope);
     if (!check.ok) return { ok: false, reason: 'replay-' + check.reason };
+    if (check.result.status === 'active') return { ok: false, reason: 'incomplete-run' };
     // Score must match the deterministic replay exactly.
     if (envelope.result.score.total !== score) return { ok: false, reason: 'score-mismatch' };
-    return { ok: true };
+    return { ok: true, result: check.result };
   } catch (e) {
     return { ok: false, reason: 'validator-error' };
   }
@@ -118,8 +119,9 @@ async function handleApi(req, res, url) {
       assists: Array.isArray(payload.assists) ? payload.assists.slice(0, 4) : [],
       durationMs: payload.durationMs | 0,
       sessionId: String(payload.sessionId || ''),
-      won: !!payload.won,
-      invalidActions: (payload.stats && payload.stats.invalidActions) | 0,
+      // Tie-break fields come from the validated replay, not client claims.
+      won: verdict.result.status === 'won',
+      invalidActions: (verdict.result.stats && verdict.result.stats.invalidActions) | 0,
       elapsedTicks: payload.durationMs | 0,
       when: Date.now(),
     });
@@ -155,7 +157,10 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     // Static files with path traversal protection.
-    let path = normalize(decodeURIComponent(url.pathname));
+    let decoded;
+    try { decoded = decodeURIComponent(url.pathname); } catch { return json(res, 400, { error: 'bad-path' }); }
+    if (decoded.split(/[\\/]/).some(p => p.startsWith('.') || ['data', 'node_modules'].includes(p))) return json(res, 403, { error: 'forbidden' });
+    let path = normalize(decoded);
     if (path === '/' || path === '\\') path = '/index.html';
     const file = join(ROOT, path);
     if (!file.startsWith(ROOT)) return json(res, 403, { error: 'forbidden' });

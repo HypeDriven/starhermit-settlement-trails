@@ -374,7 +374,7 @@ export class UI {
     }
     for (const e of entries) {
       const li = el('li', e.name === meName ? 'me' : null,
-        `${e.name} — ${e.score} (day ${e.elapsedTicks}, seed ${e.seed.toString(16).slice(0, 6)})`);
+        `${e.name} — ${e.score} (day ${e.elapsedTicks}, seed ${(e.seed >>> 0).toString(16).slice(0, 6)})`);
       ol.appendChild(li);
     }
     $('scores-note').textContent = note || '';

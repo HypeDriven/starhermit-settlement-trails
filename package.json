@@ -1,14 +1,14 @@
 {
   "name": "settlement-trails",
   "version": "1.0.0",
-  "description": "Settlement Trails — a cozy low-poly settlement builder for the browser.",
+  "description": "Settlement Trails \u2014 a cozy low-poly settlement builder for the browser.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
     "test": "node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js",
     "test:e2e": "node tests/e2e.mjs"
   },
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
   "devDependencies": {
     "playwright-core": "^1.62.1"

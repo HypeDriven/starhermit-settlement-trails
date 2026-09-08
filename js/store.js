@@ -124,7 +124,10 @@ export function submitScore({ board, name, score, contentId, contentVersion, see
   for (const e of boards.entries) (byBoard[e.board] = byBoard[e.board] || []).push(e);
   boards.entries = [];
   for (const b in byBoard) {
-    byBoard[b].sort((x, y) => y.score - x.score || x.invalidActions - y.invalidActions ||
+    // Spec §2 tie-break: score, primary objective completion (won), fewer
+    // invalid actions, lower elapsed time, then stable session identifier.
+    byBoard[b].sort((x, y) => y.score - x.score || (y.won ? 1 : 0) - (x.won ? 1 : 0) ||
+      x.invalidActions - y.invalidActions ||
       x.elapsedTicks - y.elapsedTicks || String(x.sessionId).localeCompare(String(y.sessionId)));
     boards.entries.push(...byBoard[b].slice(0, 200));
   }

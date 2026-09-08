@@ -319,14 +319,18 @@ function startGame(def, mode) {
     state.ui.setSpeedButton(1, false);
     state.audio.start(); // best effort; may need a gesture first
   } else {
+    const sess = state.session; // guard against restart/quit during countdown
     let n = 3;
     state.ui.countdown(String(n));
     const tick = () => {
+      if (state.session !== sess) return; // session replaced or quit — stop
       n--;
       if (n <= 0) {
         state.ui.countdown(null);
-        state.session.setPaused(false);
-        state.ui.setSpeedButton(1, false);
+        // Don't unpause behind the pause overlay; Resume handles that path.
+        const paused = !!state.ui.topOverlay;
+        sess.setPaused(paused);
+        state.ui.setSpeedButton(sess.speed, paused);
       } else {
         state.ui.countdown(String(n));
         setTimeout(tick, 700);
@@ -365,6 +369,7 @@ function quitToTitle() {
   if (state.session?.finished) store.clearAutosave();
   state.session = null;
   state.platform.endActivity();
+  state.ui.countdown(null);
   state.ui.closeOverlay('screen-pause');
   state.ui.closeOverlay('screen-results');
   state.ui.show('screen-title');
@@ -390,6 +395,8 @@ function resumeAutosave() {
     state.ui.buildToolbox(content.mechanics, true);
     state.ui.setModePill(modeLabel(state.mode));
     state.ui.setObjectiveText(content.blurb || content.name);
+    // Restored sessions always resume paused (Session.restore) — reflect that.
+    state.ui.setSpeedButton(state.session.speed, true);
     syncAll();
     // "While you were away" summary: simulation was paused; nothing advanced.
     state.ui.toast('Welcome back — your settlement is exactly as you left it.');
@@ -487,6 +494,15 @@ function wireKeyboard() {
       return;
     }
     if (!inGame || overlay) return;
+    // Space/Enter also trigger a click on a focused button (e.g. the speed
+    // button after show() focuses it, or a toolbox button after a mouse
+    // click), which would double-fire the hotkey. Blur and swallow the
+    // default so the hotkey below is the single handler.
+    if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') &&
+        document.activeElement && document.activeElement.tagName === 'BUTTON') {
+      document.activeElement.blur();
+      e.preventDefault();
+    }
     const cur = state.cursor;
     const move = (dx, dy) => {
       if (!state.session) return;
@@ -576,7 +592,7 @@ function advanceTutorial(action) {
   if (req.type === 'fulfill' && action.type === 'fulfill') hit = true;
   if (hit) {
     t.count++;
-    if (t.count >= (req.count || 1)) {
+    if (t.count >= (req.count || step.count || 1)) {
       t.idx++;
       t.count = 0;
       state.audio.play('achievement');
@@ -691,9 +707,9 @@ function handleTerminal(st) {
   if (newAch.length) state.audio.play('achievement');
 
   // Score submission: include ruleset, content version, seed, assists, duration.
-  // Practice is unranked by design and never touches boards.
+  // Practice and Learn are unranked by design and never touch boards.
   let rankInfo = '';
-  if (state.mode !== 'practice') {
+  if (state.mode !== 'practice' && state.mode !== 'learn') {
     const assists = state.settings.dayLength !== 'normal' ? ['relaxed-time'] : [];
     const board = state.mode === 'daily' ? 'daily-' + state.platform.utcToday() : 'global';
     const submission = {
@@ -718,7 +734,13 @@ function handleTerminal(st) {
     if (!replayCheck.ok) console.warn('replay self-check failed:', replayCheck);
     if (state.platform.hosted) {
       state.platform.submitHostedScore({ ...submission, replay: envelope, validated: replayCheck.ok })
-        .then(r => { if (!r.ok) rankInfo += ' (hosted board unavailable — casual)'; });
+        .then(r => {
+          // Resolves after the results screen rendered: update it in place.
+          if (!r.ok && state.session?.state === st && $('screen-results').classList.contains('active')) {
+            const cmp = $('results-compare');
+            cmp.textContent = (cmp.textContent ? cmp.textContent + ' ' : '') + '(hosted board unavailable — casual)';
+          }
+        });
     }
   }
   state.platform.track('round_end', { mode: state.mode, result: st.status });

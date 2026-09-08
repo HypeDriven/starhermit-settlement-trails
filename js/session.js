@@ -62,7 +62,7 @@ export class Session {
       if (this.undoStack.length > 50) this.undoStack.shift();
     }
     this.state = res.state;
-    this.commandLog.push({ id: cmd.id, tick: before.tick, cmd: { ...cmd, id: undefined } });
+    this.commandLog.push({ id: cmd.id, tick: before.tick, invalid: !res.ok, cmd: { ...cmd, id: undefined } });
     this._afterChange(before);
     return res;
   }
@@ -89,7 +89,10 @@ export class Session {
       const before = this.state;
       this.state = R.advanceDay(this.state);
       this.commandLog.push({ id: this.sessionId + ':d' + this.state.tick, tick: before.tick, cmd: { type: 'day' } });
-      const newEvents = this.state.events.slice(before.events.length);
+      // advanceDay() increments the tick before pushing events, and the log is
+      // front-trimmed at MAX_EVENTS, so index-based deltas break once the log
+      // is full — the new events are exactly those stamped with the new tick.
+      const newEvents = this.state.events.filter(e => e.tick === this.state.tick);
       dayEvents.push(...newEvents);
       this._recordHash();
       if (this.state.status !== 'active') this._finish();
@@ -98,7 +101,11 @@ export class Session {
   }
 
   _afterChange(before) {
-    const newEvents = this.state.events.slice(Math.min(before.events.length, this.state.events.length));
+    // apply() appends exactly one event, plus a won/lost event when the status
+    // transitions. With the log front-trimmed at MAX_EVENTS, take the appended
+    // tail rather than slicing by the pre-command log length.
+    const pushed = 1 + (before.status === 'active' && this.state.status !== 'active' ? 1 : 0);
+    const newEvents = this.state.events.slice(-pushed);
     if (this.state.status !== 'active' && !this.finished) {
       if (newEvents.length) this.onEvents(newEvents, this.state);
       this._finish();
@@ -203,14 +210,15 @@ export class Session {
           if (bad) return bad;
         } else {
           const res = R.apply(state, entry.cmd);
-          if (!res.ok) return { ok: false, reason: 'illegal-command', at: entry.id };
+          if (!res.ok && !entry.invalid) return { ok: false, reason: 'illegal-command', at: entry.id };
+          if (res.ok && entry.invalid) return { ok: false, reason: 'invalid-flag-mismatch', at: entry.id };
           state = res.state;
         }
       }
       if (R.hash(state) !== envelope.result.finalHash) return { ok: false, reason: 'final-hash' };
       const sc = R.score(state);
       if (sc.total !== envelope.result.score.total) return { ok: false, reason: 'score-mismatch' };
-      return { ok: true };
+      return { ok: true, result: { status: state.status, stats: state.stats, score: sc } };
     } catch (e) {
       return { ok: false, reason: 'exception', error: String(e) };
     }

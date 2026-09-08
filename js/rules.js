@@ -369,7 +369,7 @@ function pushEvent(state, ev) {
   if (state.events.length > MAX_EVENTS) state.events.splice(0, state.events.length - MAX_EVENTS);
 }
 
-// Apply a validated command. Returns { state, events } — a NEW state.
+// Apply a validated command. Returns { state, ok, reason? } — state is a NEW object.
 export function apply(state, cmd) {
   const v = validate(state, cmd);
   const next = clone(state);
