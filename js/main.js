@@ -124,6 +124,7 @@ function buildSettings(body) {
     slider('set-music', 'Music', 'music'),
     slider('set-fx', 'Effects', 'effects'),
     slider('set-amb', 'Ambience', 'ambience'),
+    slider('set-voice', 'Voice', 'voice'),
     toggle('set-mute', 'Mute all audio', 'muteAll'),
   );
   const g2 = document.createElement('div'); g2.className = 'set-group';
@@ -641,6 +642,14 @@ function handleEvents(events, st) {
     if (ev.kind === 'shortage') state.ui.alert(ev.text);
     if (ev.kind === 'order') state.ui.toast(ev.text);
     if (ev.kind === 'won' || ev.kind === 'lost') state.audio.play(ev.kind === 'won' ? 'win' : 'lose');
+    // Haptics mirror the audible event feedback (settings toggle).
+    if (state.settings.haptics && typeof navigator.vibrate === 'function') {
+      const pat = {
+        place: 12, demolish: [10, 40, 15], invalid: 30, fulfill: [10, 30, 10],
+        shortage: 25, leave: 20, won: [20, 60, 20, 60, 40], lost: 80,
+      }[ev.kind];
+      if (pat) navigator.vibrate(pat);
+    }
   }
   syncAll();
 }
