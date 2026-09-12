@@ -25,7 +25,7 @@
  * Serving: the repo ships `server.js` (the StarHermit authoritative
  * script declared by starhermit.txt), but the game is fully playable
  * offline — with no host launch token `Platform.init()` sets
- * `hosted=false` (js/platform.js:22-40) and every screen works locally
+ * `hosted=false` (js/platform.js init) and every screen works locally
  * with zero /api calls. So, following the sibling-test convention
  * (picture-logic), this test embeds a minimal node:http static server on
  * an ephemeral port and answers `/api/*` probes with 200 `{}` so the

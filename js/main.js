@@ -44,6 +44,7 @@ async function boot() {
   state.audio = new AudioEngine(state.settings);
   state.ui = new UI();
   state.ui.bind(uiHandlers());
+  state.platform.onSyncStatus = () => refreshTitle();
 
   // WebGL capability detection with graceful fallback message.
   try {
@@ -61,13 +62,13 @@ async function boot() {
   wireLifecycle();
   wireKeyboard();
   requestAnimationFrame(frame);
-  state.platform.track('start', { mode: 'boot' });
 }
 
 function refreshTitle() {
   const today = state.platform.utcToday();
   state.ui.setTitleInfo({
     profileName: state.platform.profile?.name || 'Guest',
+    sync: state.platform.hosted ? state.platform.syncLabel() : '',
     dailyDone: !!(state.progress.daily.best[today]),
     journeyUnlocked: Math.min(state.progress.journeyUnlocked, C.JOURNEY_STAGES.length),
     journeyTotal: C.JOURNEY_STAGES.length,
@@ -90,7 +91,7 @@ function buildSettings(body) {
   const s = state.settings;
   body.innerHTML = '';
   const ui = state.ui;
-  const save = () => { store.saveSettings(state.settings); applySettingsToDom(); state.platform.track('settings_change', {}); };
+  const save = () => { store.saveSettings(state.settings); applySettingsToDom(); state.platform.cloudNotifyChanged(); };
 
   const slider = (id, label, key) => {
     const input = document.createElement('input');
@@ -154,15 +155,8 @@ function buildSettings(body) {
     showLearnPicker();
   });
   g3.appendChild(replayBtn);
-  const g4 = document.createElement('div'); g4.className = 'set-group';
-  g4.innerHTML = '<h3>Privacy</h3>';
-  const consent = document.createElement('input');
-  consent.type = 'checkbox'; consent.id = 'set-analytics';
-  consent.checked = !!state.platform.consent.analytics;
-  consent.addEventListener('change', () => { state.platform.consent.analytics = consent.checked; });
-  g4.appendChild(ui.settingsRow('Share anonymous usage statistics', consent));
-
-  body.append(g1, g2, g3, g4);
+  // (No privacy/telemetry group: hosted telemetry endpoints do not exist.)
+  body.append(g1, g2, g3);
 }
 
 // ---- mode pickers ----------------------------------------------------------------------
@@ -183,7 +177,7 @@ function uiHandlers() {
     onResumeSave: () => resumeAutosave(),
     onPause: () => pauseGame(),
     onResume: () => resumeGame(),
-    onRestart: () => { if (state.def) { state.ui.closeOverlay('screen-pause'); state.ui.closeOverlay('screen-results'); startGame(state.def, state.mode); state.platform.track('retry', { mode: state.mode }); } },
+    onRestart: () => { if (state.def) { state.ui.closeOverlay('screen-pause'); state.ui.closeOverlay('screen-results'); startGame(state.def, state.mode); } },
     onQuit: () => quitToTitle(),
     onNextStage: () => {
       if (state.mode === 'journey' && state.def.stageIndex != null) {
@@ -310,9 +304,6 @@ function startGame(def, mode) {
   $('rail-left').classList.toggle('open', window.innerWidth >= 1024);
   $('rail-right').classList.remove('open');
 
-  state.platform.startActivity(mode);
-  state.platform.track('start', { mode });
-
   // Countdown (skipped under reduced motion), then play.
   state.session.setPaused(true);
   if (state.settings.reducedMotion) {
@@ -368,8 +359,8 @@ function quitToTitle() {
     store.saveAutosave(state.session.snapshot());
   }
   if (state.session?.finished) store.clearAutosave();
+  state.platform.cloudNotifyChanged();
   state.session = null;
-  state.platform.endActivity();
   state.ui.countdown(null);
   state.ui.closeOverlay('screen-pause');
   state.ui.closeOverlay('screen-results');
@@ -401,10 +392,10 @@ function resumeAutosave() {
     syncAll();
     // "While you were away" summary: simulation was paused; nothing advanced.
     state.ui.toast('Welcome back — your settlement is exactly as you left it.');
-    state.platform.startActivity(state.mode);
   } catch (e) {
     console.error('autosave restore failed', e);
     store.clearAutosave();
+    state.platform.cloudNotifyChanged();
     state.ui.toast('Saved game could not be loaded (version mismatch).', true);
   }
 }
@@ -578,7 +569,6 @@ function cycleTool(dir) {
 
 // ---- tutorial ---------------------------------------------------------------------------------
 function afterPlayerAction(cmdType, building) {
-  state.platform.track('tutorial_step', { mode: state.mode, step: state.tutorial?.idx ?? -1 });
   advanceTutorial({ type: cmdType, building });
   syncAll();
 }
@@ -628,6 +618,7 @@ function completeTutorial() {
   if (!state.settings.tutorialsDone.includes(state.def.id)) {
     state.settings.tutorialsDone.push(state.def.id);
     store.saveSettings(state.settings);
+    state.platform.cloudNotifyChanged();
   }
   if (state.settings.tutorialsDone.length >= C.TUTORIALS.length) {
     unlockAch('master_mechanics');
@@ -677,6 +668,7 @@ function handleTerminal(st) {
   const score = R.score(st);
   const won = st.status === 'won';
   store.clearAutosave();
+  state.platform.cloudNotifyChanged();
 
   // Progress
   const p = state.progress;
@@ -713,6 +705,7 @@ function handleTerminal(st) {
     }
   }
   store.saveProgress(p);
+  state.platform.cloudNotifyChanged();
   if (newAch.length) state.audio.play('achievement');
 
   // Score submission: include ruleset, content version, seed, assists, duration.
@@ -735,6 +728,7 @@ function handleTerminal(st) {
       stats: st.stats,
     };
     const res = store.submitScore(submission);
+    state.platform.cloudNotifyChanged();
     if (res.ok && res.rank) rankInfo = `Local board rank: #${res.rank}`;
     // Hosted submission with replay envelope for validation; casual label if unavailable.
     const envelope = state.session.replayEnvelope();
@@ -752,9 +746,6 @@ function handleTerminal(st) {
         });
     }
   }
-  state.platform.track('round_end', { mode: state.mode, result: st.status });
-  state.platform.endActivity();
-
   state.ui.showResults({
     won, state: st, score, mode: state.mode,
     rankInfo, newAchievements: newAch,
@@ -768,6 +759,7 @@ function unlockAch(id) {
     const a = store.ACHIEVEMENTS.find(x => x.id === id);
     if (a) state.ui.toast(`🏅 Achievement: ${a.name}`);
     state.audio.play('achievement');
+    state.platform.cloudNotifyChanged();
   }
 }
 
@@ -790,7 +782,7 @@ function showHint() {
 }
 
 // ---- scoreboards --------------------------------------------------------------------------------------
-function renderBoard(boardTab) {
+async function renderBoard(boardTab) {
   let board = 'global', note = 'All local scores.';
   if (boardTab === 'daily') { board = 'daily-' + state.platform.utcToday(); note = 'Today’s shared seed.'; }
   if (boardTab === 'friends') {
@@ -799,6 +791,14 @@ function renderBoard(boardTab) {
     state.ui.renderScores(entries, state.platform.profile?.name, state.platform.friends.length ? 'Friends only.' : 'No friends yet — showing your own scores.');
     return;
   }
+  if (boardTab === 'global' && state.platform.hosted) {
+    // The platform leaderboard is read-only; local records stay the fallback.
+    const r = await state.platform.leaderboardEntries({ pageSize: 50 });
+    if (r.ok) {
+      state.ui.renderScores(r.entries, state.platform.profile?.name, 'Platform leaderboard — read only. Local scores keep your full history.');
+      return;
+    }
+  }
   state.ui.renderScores(store.getBoard(board), state.platform.profile?.name, note);
 }
 
@@ -806,6 +806,7 @@ function renderBoard(boardTab) {
 function maybeAutosave() {
   if (state.session && !state.session.finished && state.session.state.status === 'active') {
     store.saveAutosave(state.session.snapshot());
+    state.platform.cloudNotifyChanged();
   }
 }
 

@@ -99,8 +99,8 @@ export class UI {
   get topOverlay() { return this.overlayStack[this.overlayStack.length - 1] || null; }
 
   // ---- title -------------------------------------------------------------------
-  setTitleInfo({ profileName, dailyDone, journeyUnlocked, journeyTotal, hasSave }) {
-    $('profile-line').textContent = `Signed in as ${profileName}`;
+  setTitleInfo({ profileName, sync, dailyDone, journeyUnlocked, journeyTotal, hasSave }) {
+    $('profile-line').textContent = `Signed in as ${profileName}` + (sync ? ` · ${sync}` : '');
     $('daily-status').textContent = dailyDone ? '✓ done' : '';
     $('journey-status').textContent = `${journeyUnlocked}/${journeyTotal}`;
     $('btn-resume').classList.toggle('hidden', !hasSave);
@@ -373,9 +373,14 @@ export class UI {
       ol.appendChild(el('li', 'muted', 'No scores yet — be the first!'));
     }
     for (const e of entries) {
-      const li = el('li', e.name === meName ? 'me' : null,
-        `${e.name} — ${e.score} (day ${e.elapsedTicks}, seed ${(e.seed >>> 0).toString(16).slice(0, 6)})`);
-      ol.appendChild(li);
+      const parts = [];
+      if (e.rank != null) parts.push(`#${e.rank}`);
+      parts.push(`${e.name} — ${e.score}`);
+      const meta = [];
+      if (e.elapsedTicks != null) meta.push(`day ${e.elapsedTicks}`);
+      if (e.seed != null) meta.push(`seed ${(e.seed >>> 0).toString(16).slice(0, 6)}`);
+      if (meta.length) parts.push(`(${meta.join(', ')})`);
+      ol.appendChild(el('li', e.name === meName ? 'me' : null, parts.join(' ')));
     }
     $('scores-note').textContent = note || '';
   }

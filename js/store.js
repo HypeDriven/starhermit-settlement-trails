@@ -143,6 +143,37 @@ export function getBoard(board, { friendsOnly = false, friends = [] } = {}) {
   return entries.slice(0, 50);
 }
 
+// ---- Cloud-save mirror (hosted mode) -----------------------------------------------
+// One portable doc holding every durable local doc. The platform cloud slot is
+// a mirror: localStorage remains the offline cache and the standalone source.
+
+export function exportSaveDoc() {
+  return {
+    kind: 'settlement-trails-save',
+    version: STORE_VERSION,
+    exportedAt: Date.now(),
+    settings: loadSettings(),
+    progress: loadProgress(),
+    achievements: loadAchievements(),
+    boards: loadBoards(),
+    autosave: loadAutosave(),
+  };
+}
+
+// Remote wins on conflict (platform contract). Returns false when unusable.
+export function importSaveDoc(doc) {
+  if (!doc || typeof doc !== 'object') return false;
+  if (doc.kind !== 'settlement-trails-save' || doc.version !== STORE_VERSION) return false;
+  if (doc.settings && typeof doc.settings === 'object') saveSettings({ ...DEFAULT_SETTINGS, ...doc.settings });
+  if (doc.progress && typeof doc.progress === 'object') saveProgress({ ...DEFAULT_PROGRESS, ...doc.progress });
+  if (doc.achievements && typeof doc.achievements === 'object') {
+    writeDoc('achievements', { unlocked: {}, ...doc.achievements });
+  }
+  if (doc.boards && Array.isArray(doc.boards.entries)) writeDoc('boards', { entries: doc.boards.entries });
+  if (doc.autosave) saveAutosave(doc.autosave);
+  return true;
+}
+
 // ---- Autosave ---------------------------------------------------------------------------
 export function saveAutosave(snap) { writeDoc('autosave', snap); }
 export function loadAutosave() {
