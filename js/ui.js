@@ -60,6 +60,7 @@ export class UI {
     $('btn-speed').addEventListener('click', () => handlers.onCycleSpeed());
     $('btn-undo').addEventListener('click', () => handlers.onUndo());
     $('btn-hint').addEventListener('click', () => handlers.onHint());
+    $('btn-center').addEventListener('click', () => handlers.onCenter());
     $('rail-left-toggle').addEventListener('click', () => $('rail-left').classList.toggle('open'));
     $('rail-right-toggle').addEventListener('click', () => $('rail-right').classList.toggle('open'));
     document.querySelectorAll('[data-back]').forEach(b =>

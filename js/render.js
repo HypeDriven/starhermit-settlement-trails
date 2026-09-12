@@ -330,7 +330,8 @@ export class TownRenderer {
         puff.position.set(j * s * 0.9, rng.float() * 0.2, rng.float() * 0.4);
         g.add(puff);
       }
-      g.position.set((rng.float() - 0.5) * 30, 7 + rng.float() * 3, (rng.float() - 0.5) * 30);
+      // High above any camera height so they never cross the board sightline.
+      g.position.set((rng.float() - 0.5) * 30, 26 + rng.float() * 4, (rng.float() - 0.5) * 30);
       g.userData.speed = 0.1 + rng.float() * 0.15;
       this.clouds.push(g);
       this.tileGroup.add(g);
@@ -585,9 +586,16 @@ export class TownRenderer {
     const sin = Math.sin(this.camTheta), cos = Math.cos(this.camTheta);
     this.camTargetGoal.x += (dx * cos - dz * sin) * s * -1;
     this.camTargetGoal.z += (dx * sin + dz * cos) * s * -1;
-    const lim = Math.max(this.content ? this.content.grid.w : 10, 10) * 0.8;
-    this.camTargetGoal.x = Math.max(-lim, Math.min(lim, this.camTargetGoal.x));
-    this.camTargetGoal.z = Math.max(-lim, Math.min(lim, this.camTargetGoal.z));
+    this._clampTarget();
+  }
+
+  // The look-at point never leaves the board, so some terrain is always under
+  // the screen centre at every zoom level.
+  _clampTarget() {
+    const w = this.content ? this.content.grid.w : 10, h = this.content ? this.content.grid.h : 10;
+    const lx = (w - 1) / 2 * TILE, lz = (h - 1) / 2 * TILE;
+    this.camTargetGoal.x = Math.max(-lx, Math.min(lx, this.camTargetGoal.x));
+    this.camTargetGoal.z = Math.max(-lz, Math.min(lz, this.camTargetGoal.z));
   }
 
   zoomBy(delta) {
@@ -777,6 +785,12 @@ export class TownRenderer {
         c.position.x += c.userData.speed * dtMs / 1000;
         if (c.position.x > 24) c.position.x = -24;
       }
+    }
+    if (this.clouds) {
+      // A zoomed-out camera climbing towards cloud height would otherwise see
+      // them as foreground blobs over the buildings: cull them.
+      const camY = this.camera.position.y;
+      for (const c of this.clouds) c.visible = c.position.y - camY > 6;
     }
     // Pop-in animations.
     for (let i = this.popAnims.length - 1; i >= 0; i--) {

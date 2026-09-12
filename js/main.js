@@ -201,6 +201,7 @@ function uiHandlers() {
     },
     hasUndo: () => !!state.session && state.session.allowUndo && state.session.undoStack.length > 0,
     onHint: () => showHint(),
+    onCenter: () => state.view?.resetCamera(),
     onTool: (tool) => setTool(tool),
     onBoardTab: (board) => renderBoard(board),
     onBuildSettings: buildSettings,

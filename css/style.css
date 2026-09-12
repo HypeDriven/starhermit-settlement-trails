@@ -300,6 +300,14 @@ kbd {
   .toolbox { left: auto; right: calc(.5rem + var(--safe-right)); transform: none; flex-direction: column; max-height: 70vh; }
   .tool { min-width: 48px; min-height: 44px; }
   .tutorial-card { bottom: auto; top: 3.4rem; }
+  /* Title and picker/overlay panels: scrollable, safe-centred so nothing sits
+     above the top edge or below the fold. */
+  #screen-title, #screen-picker, .screen.overlay { overflow-y: auto; justify-content: safe center; align-items: safe center; }
+  .title-card { padding: .8rem 1rem; }
+  .title-card h1 { font-size: 1.9rem; }
+  .title-actions { flex-direction: row; flex-wrap: wrap; justify-content: center; margin: .8rem 0 .6rem; }
+  .profile-line { margin-top: .6rem; }
+  .panel { max-height: none; }
 }
 
 /* Wide desktop: rails always visible */
