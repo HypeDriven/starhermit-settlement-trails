@@ -287,7 +287,7 @@ async function runPass(browser, name, ctxOpts, { full }) {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() !== 'error' || browserNoise.test(m.text())) return;
+    if ((m.type() !== 'error' && m.type() !== 'warning') || browserNoise.test(m.text())) return;
     const url = m.location()?.url || '';
     if (/Failed to load resource/.test(m.text()) && /\/api\/|\/favicon/.test(url)) return;
     const isWebglFallback = /WebGL unavailable|context lost/i.test(m.text());
@@ -305,6 +305,8 @@ async function runPass(browser, name, ctxOpts, { full }) {
     await page.waitForSelector('#screen-title.active', { timeout: 15000 });
     await page.screenshot({ path: SHOT('title', name) });
     ok(`${name}: title screen visible`);
+
+    await graphicsPass(page, name);
 
     // Play → Journey stage 1 (the default quick-play: ≤2 actions to the field)
     await page.click('#btn-play');
@@ -430,6 +432,100 @@ async function runPass(browser, name, ctxOpts, { full }) {
 
   if (errors.length) throw new Error(`${name} pass had page errors:\n  ${errors.join('\n  ')}`);
   console.log(`ok - ${name}: no page errors`);
+}
+
+// ---------- Graphics settings (real UI: Settings → Graphics) ----------
+const bodyPreset = (page) => page.evaluate(() => document.body.dataset.gfxPreset);
+async function waitPreset(page, preset) {
+  await page.waitForFunction((p) => document.body.dataset.gfxPreset === p, preset, { timeout: 30000 });
+}
+async function openSettingsFromPause(page) {
+  await page.click('#btn-pause');
+  await page.waitForSelector('#screen-pause.active', { timeout: 30000 });
+  await page.click('#btn-pause-settings');
+  await page.waitForSelector('#screen-settings.active', { timeout: 30000 });
+}
+async function closeSettingsAndResume(page) {
+  await page.click('#btn-settings-close');
+  await page.waitForFunction(() => !document.getElementById('screen-settings').classList.contains('active'), null, { timeout: 30000 });
+  await page.click('#btn-resume-game');
+  await page.waitForFunction(() => !document.getElementById('screen-pause').classList.contains('active'), null, { timeout: 30000 });
+}
+
+async function graphicsPass(page, name) {
+  // Headless runs on a software GPU, so Auto resolves to Low.
+  const auto = await bodyPreset(page);
+  if (auto !== 'low') throw new Error(`expected Auto to resolve to low on a software GPU, got ${auto}`);
+  await page.click('#btn-settings');
+  await page.waitForSelector('#screen-settings.active', { timeout: 30000 });
+  await page.waitForSelector('#gfx-section #gfx-preset');
+  const autoLabel = await page.textContent('#gfx-preset option[value="auto"]');
+  if (!/Auto|detected|\(/.test(autoLabel)) throw new Error(`unexpected auto label "${autoLabel}"`);
+  await page.selectOption('#gfx-preset', 'low');
+  await waitPreset(page, 'low');
+  await page.selectOption('#gfx-preset', 'high');
+  await waitPreset(page, 'high');
+  const fromPreset = await page.textContent('#gfx-shadows option[value="preset"]');
+  if (!/Medium|Mittel|Media|Moyen|Médio|Medio/.test(fromPreset)) throw new Error(`shadows "From preset" label not updated: "${fromPreset}"`);
+  // One override: bloom off.
+  await page.selectOption('#gfx-bloom', 'off');
+  await page.waitForFunction(() => window.__ST.view.q.bloom === 'off' && window.__ST.view.q.preset === 'high', null, { timeout: 30000 });
+  // Render scale slider through the keyboard.
+  await page.focus('#gfx-scale');
+  await page.keyboard.press('ArrowRight');
+  const scaleTxt = (await page.textContent('#gfx-section output')).trim();
+  if (scaleTxt !== '105%') throw new Error(`render scale output "${scaleTxt}"`);
+  await page.click('#btn-settings-close');
+  ok(`${name}: graphics — Low then High applied live, bloom override + render scale set`);
+
+  // Survives reload.
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#screen-title.active', { timeout: 15000 });
+  await waitPreset(page, 'high');
+  await page.click('#btn-settings');
+  await page.waitForSelector('#gfx-preset');
+  const persisted = await page.evaluate(() => ({
+    preset: document.getElementById('gfx-preset').value,
+    bloom: document.getElementById('gfx-bloom').value,
+    q: window.__ST.view.q.bloom,
+  }));
+  if (persisted.preset !== 'high' || persisted.bloom !== 'off' || persisted.q !== 'off') {
+    throw new Error('graphics settings did not survive reload: ' + JSON.stringify(persisted));
+  }
+  await page.click('#btn-settings-close');
+  ok(`${name}: graphics settings persisted across reload`);
+
+  // In game: render the post chain at High, then Ultra, then back to Auto.
+  await page.click('#btn-play');
+  await gameActive(page);
+  await page.waitForTimeout(800);
+  const post = await page.evaluate(() => window.__ST.view.stats().post);
+  if (!post) throw new Error('High preset did not build the post-processing chain');
+  await openSettingsFromPause(page);
+  await page.selectOption('#gfx-preset', 'ultra');
+  await waitPreset(page, 'ultra');
+  const bloomAfter = await page.inputValue('#gfx-bloom');
+  if (bloomAfter !== 'preset') throw new Error('choosing a preset did not clear overrides');
+  const summary = await page.textContent('#gfx-summary');
+  if (!/4096² shadows/.test(summary)) throw new Error(`summary not updated for Ultra: "${summary}"`);
+  await closeSettingsAndResume(page);
+  await page.waitForTimeout(800);
+  await openSettingsFromPause(page);
+  await page.selectOption('#gfx-preset', 'auto');
+  await waitPreset(page, 'low');
+  const low = await page.evaluate(() => window.__ST.view.stats());
+  await closeSettingsAndResume(page);
+  await page.waitForTimeout(300);
+  const lowPost = await page.evaluate(() => window.__ST.view.stats().post);
+  if (lowPost) throw new Error('Low/Auto should render without a post chain');
+  await page.click('#btn-pause');
+  await page.waitForSelector('#screen-pause.active', { timeout: 30000 });
+  await page.click('#btn-quit');
+  await page.waitForSelector('#screen-title.active');
+  ok(`${name}: graphics — High/Ultra post chain rendered in game, back to Auto (${low.quality})`);
+  // Fresh page for the gameplay flow.
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#screen-title.active', { timeout: 15000 });
 }
 
 // ---------- main ----------

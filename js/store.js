@@ -53,7 +53,7 @@ function writeDoc(name, doc) {
 export const DEFAULT_SETTINGS = {
   music: 0.6, effects: 0.8, ambience: 0.5, voice: 0.0,
   muteAll: false,
-  quality: 'auto',           // auto | low | medium | high
+  graphics: {},              // gfx.js saved model: { preset, render_scale, adaptive, show_fps, <category> }
   reducedMotion: false,
   highContrast: false,
   colorPalette: 'default',   // default | deuteranopia | protanopia | tritanopia
@@ -70,7 +70,18 @@ export const DEFAULT_SETTINGS = {
   },
 };
 
-export const loadSettings = () => readDoc('settings', DEFAULT_SETTINGS);
+export const loadSettings = () => migrateSettings(readDoc('settings', DEFAULT_SETTINGS));
+
+// Pre-graphics-panel saves carried a single `quality` tier (auto|low|medium|high).
+export function migrateSettings(s) {
+  if (!s.graphics || typeof s.graphics !== 'object') s.graphics = {};
+  if ('quality' in s) {
+    const q = s.quality;
+    if (q && q !== 'auto' && !s.graphics.preset) s.graphics.preset = q === 'medium' ? 'balanced' : q;
+    delete s.quality;
+  }
+  return s;
+}
 export const saveSettings = (s) => writeDoc('settings', s);
 
 // ---- Progress --------------------------------------------------------------------

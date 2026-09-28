@@ -233,6 +233,18 @@ button { font: inherit; }
 .set-row select, .set-row input { min-height: 40px; font: inherit; background: var(--panel-2); color: var(--ink); border: 1px solid rgba(255,255,255,.15); border-radius: 8px; padding: .3rem .5rem; }
 .set-group { border-top: 1px solid rgba(255,255,255,.1); padding-top: .6rem; }
 .set-group h3 { margin: 0 0 .5rem; font-size: .95rem; color: var(--accent); }
+.set-group .set-row + .set-row { margin-top: .35rem; }
+.gfx-scale { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 10rem; }
+.gfx-scale input[type="range"] { flex: 1; min-width: 6rem; }
+.gfx-scale output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gfx-summary { margin: .6rem 0 0; font-size: .85rem; color: var(--ink-dim); overflow-wrap: anywhere; }
+.gfx-note { margin: .4rem 0 0; font-size: .85rem; color: var(--danger); }
+.set-row select { max-width: 100%; }
+.fps-meter {
+  position: fixed; left: calc(.5rem + var(--safe-left)); bottom: calc(.4rem + var(--safe-bottom));
+  z-index: 45; pointer-events: none; font: 600 .72rem/1.2 var(--font); font-variant-numeric: tabular-nums;
+  background: rgba(8,14,10,.7); color: var(--ink); padding: .15rem .4rem; border-radius: 6px;
+}
 
 /* ---------- help ---------- */
 .help-body { display: grid; gap: .8rem; max-width: 70ch; }

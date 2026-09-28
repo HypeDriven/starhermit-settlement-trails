@@ -4,17 +4,23 @@
 // layers for environment / gameplay / selection / effects.
 
 import * as THREE from '../vendor/three.module.js';
+import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from '../vendor/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from '../vendor/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from '../vendor/addons/postprocessing/SMAAPass.js';
+import { FXAAShader } from '../vendor/addons/shaders/FXAAShader.js';
+import { RoomEnvironment } from '../vendor/addons/environments/RoomEnvironment.js';
 import { TERRAIN } from './rules.js';
 import { RngStream } from './rng.js';
+import { detectPreset, resolve, describe, SHADOW_MAP, PARTICLE_POOL } from './gfx.js';
 
 export const LAYER = { ENV: 0, GAME: 1, SELECT: 2, FX: 3 };
 
 const TILE = 1;            // world units per grid cell
-const QUALITY = {
-  low:    { dpr: 1.0, shadows: false, particles: 0,    antialias: false, water: true },
-  medium: { dpr: 1.5, shadows: false, particles: 600,  antialias: true,  water: true },
-  high:   { dpr: 2.0, shadows: true,  particles: 2000, antialias: true,  water: true },
-};
+const MAX_PARTICLES = 2000;
 
 // Palettes reinforced by shape; color-vision variants swap selection/ghost hues.
 const PALETTES = {
@@ -36,24 +42,175 @@ function disposeObj(root) {
   });
 }
 
+// Colour grade + vignette, applied after tone mapping (display-space in/out).
+// Gentle S-curve, a touch more saturation, warm highlights / cool shadows.
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uAmount: { value: 1.0 }, uVignette: { value: 0.2 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uAmount; uniform float uVignette;
+    varying vec2 vUv;
+    void main() {
+      vec4 src = texture2D(tDiffuse, vUv);
+      vec3 c = clamp(src.rgb, 0.0, 1.0);
+      vec3 s = mix(c, c * c * (3.0 - 2.0 * c), 0.22);
+      float l = dot(s, vec3(0.299, 0.587, 0.114));
+      s = mix(vec3(l), s, 1.1);
+      s *= mix(vec3(0.97, 0.99, 1.04), vec3(1.03, 1.0, 0.96), smoothstep(0.2, 0.8, l));
+      c = mix(c, s, uAmount);
+      float d = length((vUv - 0.5) * vec2(1.0, 0.85));
+      c *= 1.0 - uVignette * smoothstep(0.38, 0.8, d);
+      gl_FragColor = vec4(c, src.a);
+    }`,
+};
+
+// Deterministic tileable value-noise canvas (grayscale), used for ground grain
+// and to derive the water normal map. Wraps at the edges so tiles stay seamless.
+function noiseCanvas(size, seed, octaves = 3) {
+  const rng = new RngStream(seed >>> 0, 'tex');
+  const grids = [];
+  for (let o = 0; o < octaves; o++) {
+    const n = 4 << o;
+    const g = new Float32Array(n * n);
+    for (let i = 0; i < g.length; i++) g[i] = rng.float();
+    grids.push({ n, g });
+  }
+  const out = new Float32Array(size * size);
+  const smooth = (t) => t * t * (3 - 2 * t);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let v = 0, amp = 1, tot = 0;
+      for (const { n, g } of grids) {
+        const fx = x / size * n, fy = y / size * n;
+        const x0 = Math.floor(fx), y0 = Math.floor(fy);
+        const tx = smooth(fx - x0), ty = smooth(fy - y0);
+        const at = (a, b) => g[((b % n) * n) + (a % n)];
+        const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * tx;
+        const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * tx;
+        v += (a + (b - a) * ty) * amp; tot += amp; amp *= 0.5;
+      }
+      out[y * size + x] = v / tot;
+    }
+  }
+  return out;
+}
+
+function makeGroundTexture() {
+  const size = 128;
+  const n = noiseCanvas(size, 0x51ee7, 4);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  for (let i = 0; i < n.length; i++) {
+    // Mostly bright so instance colours stay true; soft mottling plus fine grain.
+    const v = Math.round(255 * (0.84 + 0.16 * n[i]) * (0.97 + 0.03 * ((i * 2654435761) % 997) / 997));
+    img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeWaterNormal() {
+  const size = 64;
+  const h = noiseCanvas(size, 0xa11ce, 3);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  const at = (x, y) => h[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 3, dy = (at(x, y + 1) - at(x, y - 1)) * 3;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = Math.round((-dx / len * 0.5 + 0.5) * 255);
+      img.data[i + 1] = Math.round((-dy / len * 0.5 + 0.5) * 255);
+      img.data[i + 2] = Math.round((1 / len * 0.5 + 0.5) * 255);
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function makeDotTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+}
+
+// three's ACESFilmicToneMapping (r160) on a linear RGB triple.
+function acesForward(c, exposure) {
+  const IN = [[0.59719, 0.07600, 0.02840], [0.35458, 0.90834, 0.13383], [0.04823, 0.01566, 0.83777]];
+  const OUT = [[1.60475, -0.10208, -0.00327], [-0.53108, 1.10813, -0.07276], [-0.07367, -0.00605, 1.07602]];
+  const mul = (m, v) => [0, 1, 2].map(i => m[0][i] * v[0] + m[1][i] * v[1] + m[2][i] * v[2]);
+  let v = c.map(x => x * exposure / 0.6);
+  v = mul(IN, v);
+  v = v.map(x => (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.4329510) + 0.238081));
+  return mul(OUT, v).map(x => Math.min(1, Math.max(0, x)));
+}
+
+/** Colour whose tone-mapped result matches `color` (so the sky keeps its authored hue). */
+function untoneMapped(color, exposure) {
+  const t = [color.r, color.g, color.b].map(x => Math.min(0.96, x));
+  let x = t.slice();
+  for (let i = 0; i < 200; i++) {
+    const f = acesForward(x, exposure);
+    x = x.map((xi, k) => Math.max(0, xi + (t[k] - f[k]) * 1.5));
+  }
+  return new THREE.Color(x[0], x[1], x[2]);
+}
+
+const prefersReducedMotion = () => {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+};
+
 export class TownRenderer {
   constructor(container, settings = {}) {
     this.container = container;
     this.settings = settings;
-    this.qualityName = settings.quality && settings.quality !== 'auto' ? settings.quality : this._autoQuality();
-    this.q = QUALITY[this.qualityName];
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: this.q.antialias, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.dpr));
+    // The canvas never uses built-in MSAA: anti-aliasing (including MSAA) runs in
+    // the post chain so it can change live; Low renders directly without AA.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.shadowMap.enabled = this.q.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
+    this.gpu = TownRenderer._gpuName(this.renderer);
+    const mobile = (navigator.maxTouchPoints || 0) > 0 && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+      || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+    this.detected = detectPreset(this.gpu, { mobile });
+    this.size = [0, 0];
+    this.pixelRatio = 1;
+    this.adaptiveScale = 1;
+    this._frames = [];
+    this.fps = 0;
+    this.composer = null;
+    this.postKey = null;
+    this.postFailed = false;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+    // Camera sees environment + selection + effects layers (gameplay layer is the
+    // invisible pick plane, raycast only).
+    this.camera.layers.enable(LAYER.SELECT);
+    this.camera.layers.enable(LAYER.FX);
     this.camTarget = new THREE.Vector3(0, 0, 0);
     this.camDist = 14;
     this.camDistTarget = 14;
@@ -64,6 +221,7 @@ export class TownRenderer {
 
     this.palette = PALETTES[settings.colorPalette] || PALETTES.default;
     this.reducedMotion = !!settings.reducedMotion;
+    this.q = resolve(settings.graphics, this.detected);
 
     this.content = null;
     this.theme = null;
@@ -83,6 +241,8 @@ export class TownRenderer {
     this.particles = null;
     this.time = 0;
     this.shake = 0;
+    this.smokeTimer = 0;
+    this.lastState = null;
 
     // callbacks assigned by UI
     this.onTileHover = null;
@@ -105,31 +265,163 @@ export class TownRenderer {
       if (this.onContextLost) this.onContextLost();
     });
 
+    this._gfxKey = null;
+    this.setGraphics(settings.graphics || {});
     this.resize();
   }
 
-  _autoQuality() {
-    const small = Math.min(screen.width, screen.height) < 820;
-    const mobileUA = /Mobi|Android/i.test(navigator.userAgent);
-    return mobileUA || small ? 'low' : 'high';
+  static _gpuName(r) {
+    try {
+      const gl = r.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+    } catch { return ''; }
   }
 
+  get qualityName() { return this.q.preset; }
+
+  /** Legacy tier names (low/medium/high) map onto presets. */
   setQuality(name) {
-    if (!QUALITY[name]) return;
-    this.qualityName = name;
-    this.q = QUALITY[name];
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.dpr));
-    this.renderer.shadowMap.enabled = this.q.shadows;
-    if (this.keyLight) this.keyLight.castShadow = this.q.shadows;
-    this.resize();
+    const preset = name === 'medium' ? 'balanced' : name;
+    this.setGraphics({ ...(this.settings.graphics || {}), preset });
   }
 
   applySettings(s) {
     this.settings = s;
     this.palette = PALETTES[s.colorPalette] || PALETTES.default;
     this.reducedMotion = !!s.reducedMotion;
-    if (s.quality && s.quality !== 'auto' && s.quality !== this.qualityName) this.setQuality(s.quality);
     if (this.selectRing) this.selectRing.material.color.setHex(this.palette.select);
+    this.setGraphics(s.graphics || {});
+  }
+
+  get motionReduced() { return this.reducedMotion || prefersReducedMotion(); }
+
+  // ---- graphics settings ---------------------------------------------------------
+  /** Apply saved graphics settings live (no reload). `{}` = Auto. */
+  setGraphics(saved) {
+    const key = JSON.stringify(saved || {});
+    if (key === this._gfxKey) return;
+    this._gfxKey = key;
+    const prev = this.q;
+    const g = resolve(saved, this.detected);
+    this.q = g;
+    const size = SHADOW_MAP[g.shadows];
+    const shadowsChanged = !prev || (SHADOW_MAP[prev.shadows] > 0) !== (size > 0) || !this._gfxApplied;
+    this.renderer.shadowMap.enabled = size > 0;
+    this.keyLight.castShadow = size > 0;
+    if (size > 0 && this.keyLight.shadow.mapSize.x !== size) {
+      this.keyLight.shadow.mapSize.set(size, size);
+      this.keyLight.shadow.map?.dispose();
+      this.keyLight.shadow.map = null;
+    }
+    // Particles: resize the live pool; drop any in flight beyond it.
+    this.poolSize = PARTICLE_POOL[g.particles];
+    if (this.pLife) { this.pLife.fill(0); this.pPos.fill(-999); this.pHead = 0; }
+    this._applyDetailLights();
+    // Surface detail swaps materials, so rebuild the scene from retained content.
+    if (this._gfxApplied && prev && prev.detail !== g.detail && this.content) this._rebuildScene();
+    else if (shadowsChanged) this._refreshMaterials();
+    this._gfxApplied = true;
+    this.adaptiveScale = 1;
+    this._frames = [];
+    this.postFailed = false;
+    this.postKey = null; // rebuild the post chain on the next frame
+    this._fpsVisible(g.showFps);
+    const el = this.renderer.domElement;
+    el.dataset.gfxPreset = g.preset;
+    document.body.dataset.gfxPreset = g.preset;
+    document.body.dataset.gfxAuto = g.auto ? '1' : '0';
+  }
+
+  /** What the settings panel shows: GPU, auto choice, resolved tiers, cost, fps. */
+  graphicsInfo() {
+    const px = [Math.round(this.size[0] * this.pixelRatio), Math.round(this.size[1] * this.pixelRatio)];
+    return {
+      gpu: this.gpu || 'unknown GPU',
+      detected: this.detected,
+      resolved: this.q,
+      summary: describe(this.q, px),
+      fps: Math.round(this.fps || 0),
+      adaptiveScale: Math.round(this.adaptiveScale * 100) / 100,
+      postFailed: !!this.postFailed,
+    };
+  }
+
+  _refreshMaterials() {
+    this.scene.traverse(o => {
+      if (!o.material) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+    });
+  }
+
+  _rebuildScene() {
+    const cam = {
+      t: this.camTarget.clone(), g: this.camTargetGoal.clone(), d: this.camDist, dt: this.camDistTarget,
+      th: this.camTheta, tht: this.camThetaTarget,
+    };
+    const ghostType = this.ghostType;
+    const ghostPos = this.ghost ? this.ghost.position.clone() : null;
+    this.clearGhost();
+    this.loadContent(this.content, this.theme);
+    this.camTarget.copy(cam.t); this.camTargetGoal.copy(cam.g);
+    this.camDist = cam.d; this.camDistTarget = cam.dt;
+    this.camTheta = cam.th; this.camThetaTarget = cam.tht;
+    if (this.lastState) {
+      this._quietSync = true;
+      this.syncState(this.lastState);
+      this._quietSync = false;
+    }
+    if (ghostType && ghostPos) this._ghostPending = { type: ghostType, pos: ghostPos };
+  }
+
+  _fpsVisible(on) {
+    let el = document.getElementById('fps-meter');
+    if (on && !el) {
+      el = document.createElement('div');
+      el.id = 'fps-meter';
+      el.className = 'fps-meter';
+      el.setAttribute('aria-hidden', 'true');
+      el.textContent = '… fps';
+      document.body.append(el);
+    }
+    if (el) el.hidden = !on;
+  }
+
+  get detailed() { return this.q.detail === 'detailed'; }
+
+  /** Material factory: flat Lambert (plain) or PBR standard (detailed). */
+  _mat(color, opts = {}) {
+    if (!this.detailed) {
+      const m = new THREE.MeshLambertMaterial({ color });
+      if (opts.transparent) { m.transparent = true; m.opacity = opts.opacity; }
+      return m;
+    }
+    return new THREE.MeshStandardMaterial({
+      color, roughness: opts.roughness ?? 0.82, metalness: opts.metalness ?? 0,
+      envMapIntensity: opts.env ?? 0.35,
+      emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.emissiveIntensity ?? 1,
+      transparent: !!opts.transparent, opacity: opts.opacity ?? 1, map: opts.map || null,
+    });
+  }
+
+  _applyDetailLights() {
+    if (this.detailed) {
+      if (!this.envTex) {
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.envTex = pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture;
+        pmrem.dispose();
+      }
+      this.scene.environment = this.envTex;
+      // IBL supplies part of the fill, so the hemisphere backs off a little.
+      this.hemi.intensity = 0.5;
+      this.keyLight.intensity = 1.85;
+      this.renderer.toneMappingExposure = 0.95;
+    } else {
+      this.scene.environment = null;
+      this.hemi.intensity = 0.9;
+      this.keyLight.intensity = 1.6;
+      this.renderer.toneMappingExposure = 1.05;
+    }
   }
 
   _buildLights() {
@@ -137,14 +429,22 @@ export class TownRenderer {
     this.scene.add(this.hemi);
     this.keyLight = new THREE.DirectionalLight(0xfff2dd, 1.6);
     this.keyLight.position.set(8, 14, 6);
-    this.keyLight.castShadow = this.q.shadows;
-    if (this.q.shadows) {
-      this.keyLight.shadow.mapSize.set(1024, 1024);
-      const s = 12;
-      Object.assign(this.keyLight.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 40 });
-      this.keyLight.shadow.bias = -0.0005;
-    }
-    this.scene.add(this.keyLight);
+    this.keyLight.shadow.mapSize.set(1024, 1024);
+    this.keyLight.shadow.bias = -0.0004;
+    this.keyLight.shadow.normalBias = 0.02;
+    this._fitShadow(12);
+    this.scene.add(this.keyLight, this.keyLight.target);
+  }
+
+  /** Fit the key light's orthographic shadow box tightly around the board. */
+  _fitShadow(radius) {
+    const dir = new THREE.Vector3(8, 14, 6).normalize();
+    const dist = radius * 2 + 4;
+    this.keyLight.position.copy(dir.multiplyScalar(dist));
+    this.keyLight.target.position.set(0, 0, 0);
+    const cam = this.keyLight.shadow.camera;
+    Object.assign(cam, { left: -radius, right: radius, top: radius, bottom: -radius, near: dist - radius - 2, far: dist + radius + 2 });
+    cam.updateProjectionMatrix();
   }
 
   // ---- Scene construction -----------------------------------------------------
@@ -162,7 +462,27 @@ export class TownRenderer {
     this.theme = theme;
     this.decorTerrain = content.terrain.slice(); // render-owned; content stays pristine
 
-    this.scene.background = new THREE.Color(theme.sky);
+    if (this.bgTex) { this.bgTex.dispose(); this.bgTex = null; }
+    if (this.detailed) {
+      // Soft vertical sky gradient: lighter overhead, melting into the fog tint.
+      const c = document.createElement('canvas');
+      c.width = 2; c.height = 256;
+      const g = c.getContext('2d');
+      // The background is tone-mapped like the scene, so pre-compensate each stop.
+      const exp = this.renderer.toneMappingExposure;
+      const stop = (c) => '#' + untoneMapped(c, exp).getHexString();
+      const top = new THREE.Color(theme.sky).offsetHSL(0, 0.08, -0.06);
+      const grad = g.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, stop(top));
+      grad.addColorStop(0.5, stop(new THREE.Color(theme.sky)));
+      grad.addColorStop(1, stop(new THREE.Color(theme.fog)));
+      g.fillStyle = grad; g.fillRect(0, 0, 2, 256);
+      this.bgTex = new THREE.CanvasTexture(c);
+      this.bgTex.colorSpace = THREE.SRGBColorSpace;
+      this.scene.background = this.bgTex;
+    } else {
+      this.scene.background = new THREE.Color(theme.sky);
+    }
     this.scene.fog = new THREE.Fog(theme.fog, 22, 48);
 
     const { w, h } = content.grid;
@@ -180,9 +500,16 @@ export class TownRenderer {
     // Land tiles: ONE InstancedMesh with per-instance color (draw-call budget).
     // Water stays individual meshes for bobbing animation.
     const landGeo = new THREE.BoxGeometry(1, 1, 1);
-    const landMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const landIds = [];
-    const waterMat = new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: 0.85 });
+    if (this.detailed && !this.groundTex) this.groundTex = makeGroundTexture();
+    if (this.detailed && !this.waterNormal) this.waterNormal = makeWaterNormal();
+    const landMat = this._mat(0xffffff, { roughness: 0.95, env: 0.2, map: this.detailed ? this.groundTex : null });
+    const waterMat = this.detailed
+      ? new THREE.MeshStandardMaterial({
+        color: theme.water, roughness: 0.2, metalness: 0.0, envMapIntensity: 0.45,
+        transparent: true, opacity: 0.9, normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.45, 0.45),
+      })
+      : new THREE.MeshLambertMaterial({ color: theme.water, transparent: true, opacity: 0.85 });
+    this.waterMat = waterMat;
     const tileGeo = new THREE.BoxGeometry(TILE, 0.3, TILE);
     this._landCells = [];
     const terrainColor = (t) => new THREE.Color(
@@ -197,7 +524,7 @@ export class TownRenderer {
         if (t === TERRAIN.WATER) {
           const m = new THREE.Mesh(tileGeo, waterMat);
           m.position.set(this._wx(x), -0.27, this._wz(y));
-          m.receiveShadow = this.q.shadows;
+          m.receiveShadow = true;
           this.waterMeshes.push(m);
           this.waterPhase.push(rng.float() * Math.PI * 2);
           this.tileGroup.add(m);
@@ -206,6 +533,16 @@ export class TownRenderer {
         const height = 0.3 + hh;
         this._landCells.push({ x, y, t, height, shade: 0.92 + rng.float() * 0.12 });
       }
+    }
+    if (this.detailed && this.waterMeshes.length) {
+      // Opaque riverbed under the translucent water so the sky never shows through.
+      const bedMat = this._mat(new THREE.Color(theme.water).lerp(new THREE.Color(0x3a3020), 0.55).getHex(), { roughness: 1, env: 0.2 });
+      const beds = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, 0.15, TILE), bedMat, this.waterMeshes.length);
+      const bm = new THREE.Matrix4();
+      this.waterMeshes.forEach((wm, i) => { bm.makeTranslation(wm.position.x, -0.375, wm.position.z); beds.setMatrixAt(i, bm); });
+      beds.instanceMatrix.needsUpdate = true;
+      beds.receiveShadow = true;
+      this.tileGroup.add(beds);
     }
     const land = new THREE.InstancedMesh(landGeo, landMat, Math.max(1, this._landCells.length));
     this._landCells.forEach((c, i) => {
@@ -219,12 +556,12 @@ export class TownRenderer {
     });
     land.instanceMatrix.needsUpdate = true;
     if (land.instanceColor) land.instanceColor.needsUpdate = true;
-    land.receiveShadow = this.q.shadows;
+    land.receiveShadow = true;
     this.landMesh = land;
     this.tileGroup.add(land);
 
     // Invisible full-board pick plane (gameplay raycast layer).
-    if (this.pickPlane) { disposeObj(this.pickPlane); }
+    if (this.pickPlane) { this.scene.remove(this.pickPlane); disposeObj(this.pickPlane); }
     this.pickPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(w * TILE, h * TILE),
       new THREE.MeshBasicMaterial({ visible: false })
@@ -240,6 +577,10 @@ export class TownRenderer {
     this._buildRocks(rng);
     // Decorative clouds & birds (environment flavor, never raycastable).
     this._buildSky(rng);
+
+    this._fitShadow(Math.hypot(w, h) * TILE / 2 + 0.6);
+    // Warm window glow: stronger on dusk/night boards.
+    this.windowGlow = theme.ambient === 'night' ? 2.6 : 1.4;
 
     // Camera framing: fit board.
     this.camTarget.set(0, 0, 0);
@@ -273,20 +614,33 @@ export class TownRenderer {
     }
     const cone = new THREE.ConeGeometry(0.22, 0.7, 6);
     const trunk = new THREE.CylinderGeometry(0.05, 0.07, 0.25, 5);
-    const leafMat = new THREE.MeshLambertMaterial({ color: this.theme.forest });
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2f });
+    const leafMat = this._mat(this.theme.forest, { roughness: 0.75 });
+    const trunkMat = this._mat(0x6b4a2f, { roughness: 0.9 });
+    if (this.detailed) {
+      // Canopy tint variation per tree so forests read as foliage, not a flat block.
+      leafMat.color.setHex(0xffffff);
+    }
     const leaves = new THREE.InstancedMesh(cone, leafMat, Math.max(1, positions.length));
     const trunks = new THREE.InstancedMesh(trunk, trunkMat, Math.max(1, positions.length));
     const m4 = new THREE.Matrix4();
+    const base = new THREE.Color(this.theme.forest);
+    const tint = new THREE.Color();
     positions.forEach((p, i) => {
       m4.makeScale(p.s, p.s, p.s).setPosition(p.x, 0.55 * p.s, p.z);
       leaves.setMatrixAt(i, m4);
+      if (this.detailed) {
+        const v = ((p.cell * 7919 + i * 104729) % 1000) / 1000;
+        tint.copy(base).offsetHSL((v - 0.5) * 0.03, 0, (v - 0.5) * 0.08);
+        leaves.setColorAt(i, tint);
+      }
       m4.makeScale(p.s, p.s, p.s).setPosition(p.x, 0.12 * p.s, p.z);
       trunks.setMatrixAt(i, m4);
     });
     leaves.instanceMatrix.needsUpdate = true;
     trunks.instanceMatrix.needsUpdate = true;
-    leaves.castShadow = this.q.shadows;
+    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+    leaves.castShadow = true; leaves.receiveShadow = true;
+    trunks.castShadow = true;
     this.treeInstances = { leaves, trunks, positions };
     this.tileGroup.add(leaves, trunks);
   }
@@ -303,7 +657,8 @@ export class TownRenderer {
     }
     if (!positions.length) return;
     const geo = new THREE.DodecahedronGeometry(0.32, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: this.theme.rock });
+    const mat = this._mat(this.theme.rock, { roughness: 0.7, env: 0.5 });
+    if (this.detailed) mat.flatShading = true;
     const rocks = new THREE.InstancedMesh(geo, mat, positions.length);
     const m4 = new THREE.Matrix4();
     const e = new THREE.Euler();
@@ -313,14 +668,14 @@ export class TownRenderer {
       rocks.setMatrixAt(i, m4);
     });
     rocks.instanceMatrix.needsUpdate = true;
-    rocks.castShadow = this.q.shadows;
+    rocks.castShadow = true; rocks.receiveShadow = true;
     this.tileGroup.add(rocks);
   }
 
   _buildSky(rng) {
     // A few low-poly clouds drifting far above; pure decoration on env layer.
     this.clouds = [];
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    const mat = this._mat(0xffffff, { transparent: true, opacity: 0.85, roughness: 1, env: 0.2 });
     for (let i = 0; i < 5; i++) {
       const g = new THREE.Group();
       const n = rng.int(2, 4);
@@ -341,31 +696,48 @@ export class TownRenderer {
   // ---- Building meshes -------------------------------------------------------------
   _buildingGroup(type) {
     const g = new THREE.Group();
-    const add = (geo, color, x = 0, y = 0, z = 0, ry = 0) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
+    const add = (geo, color, x = 0, y = 0, z = 0, ry = 0, opts) => {
+      const m = new THREE.Mesh(geo, this._mat(color, opts));
       m.position.set(x, y, z);
       m.rotation.y = ry;
-      m.castShadow = this.q.shadows;
+      m.castShadow = true;
+      m.receiveShadow = true;
       g.add(m);
       return m;
+    };
+    const detailed = this.detailed;
+    const roof = { roughness: 0.6, env: 0.5 };
+    const glow = { roughness: 0.3, emissive: 0xffb65a, emissiveIntensity: this.windowGlow || 1.4 };
+    const win = (x, y, z, ry = 0) => {
+      if (!detailed) return;
+      const w = add(new THREE.BoxGeometry(0.09, 0.09, 0.012), 0x3a2a18, x, y, z, ry, glow);
+      w.castShadow = false;
+      w.userData.window = true;
     };
     switch (type) {
       case 'hall': {
         add(new THREE.BoxGeometry(0.6, 0.5, 0.6), 0xb08968, 0, 0.25, 0);
-        add(new THREE.ConeGeometry(0.5, 0.4, 4), 0x8c4a2f, 0, 0.7, 0, Math.PI / 4);
+        add(new THREE.ConeGeometry(0.5, 0.4, 4), 0x8c4a2f, 0, 0.7, 0, Math.PI / 4, roof);
+        win(-0.14, 0.3, 0.305); win(0.14, 0.3, 0.305);
+        if (detailed) add(new THREE.BoxGeometry(0.68, 0.06, 0.68), 0x8a7058, 0, 0.03, 0); // plinth
         add(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 4), 0x554433, 0, 1.05, 0);
-        add(new THREE.BoxGeometry(0.22, 0.14, 0.02), 0xd4a017, 0.12, 1.2, 0); // banner
+        add(new THREE.BoxGeometry(0.22, 0.14, 0.02), 0xd4a017, 0.12, 1.2, 0, 0, { roughness: 0.5, emissive: 0x3a2800 }); // banner
         break;
       }
       case 'road': {
         add(new THREE.BoxGeometry(0.9, 0.06, 0.9), 0x8d7f70, 0, 0.03, 0);
         add(new THREE.BoxGeometry(0.12, 0.065, 0.9), 0xa89a88, 0, 0.035, 0); // center stripe
+        if (detailed) {
+          add(new THREE.BoxGeometry(0.05, 0.075, 0.9), 0x6f6356, -0.43, 0.037, 0); // kerbs
+          add(new THREE.BoxGeometry(0.05, 0.075, 0.9), 0x6f6356, 0.43, 0.037, 0);
+        }
         break;
       }
       case 'house': {
         add(new THREE.BoxGeometry(0.5, 0.38, 0.5), 0xe8d8b8, 0, 0.19, 0);
-        add(new THREE.ConeGeometry(0.42, 0.32, 4), 0xb0503c, 0, 0.53, 0, Math.PI / 4);
+        add(new THREE.ConeGeometry(0.42, 0.32, 4), 0xb0503c, 0, 0.53, 0, Math.PI / 4, roof);
         add(new THREE.BoxGeometry(0.12, 0.18, 0.02), 0x6b4a2f, 0.1, 0.09, 0.26); // door
+        win(-0.11, 0.22, 0.255); win(0.255, 0.22, 0, Math.PI / 2);
         const chim = add(new THREE.BoxGeometry(0.08, 0.16, 0.08), 0x9a8a7a, -0.12, 0.5, -0.1);
         g.userData.chimney = chim;
         break;
@@ -380,14 +752,15 @@ export class TownRenderer {
       }
       case 'lumber': {
         add(new THREE.BoxGeometry(0.45, 0.3, 0.4), 0x8a6a44, 0, 0.15, 0);
-        add(new THREE.ConeGeometry(0.38, 0.25, 4), 0x5f4430, 0, 0.42, 0, Math.PI / 4);
+        add(new THREE.ConeGeometry(0.38, 0.25, 4), 0x5f4430, 0, 0.42, 0, Math.PI / 4, roof);
         add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 6), 0x6b4a2f, 0.28, 0.07, 0.15, Math.PI / 2);
         add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 6), 0x7a5636, 0.28, 0.2, 0.1, Math.PI / 2);
         break;
       }
       case 'well': {
         add(new THREE.CylinderGeometry(0.2, 0.22, 0.3, 8), 0x9a9a9a, 0, 0.15, 0);
-        add(new THREE.ConeGeometry(0.28, 0.2, 4), 0x8c4a2f, 0, 0.5, 0, Math.PI / 4);
+        add(new THREE.ConeGeometry(0.28, 0.2, 4), 0x8c4a2f, 0, 0.5, 0, Math.PI / 4, roof);
+        if (detailed) add(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 12), 0x3d6f9e, 0, 0.3, 0, 0, { roughness: 0.1, env: 1.2 }); // water surface
         add(new THREE.BoxGeometry(0.04, 0.25, 0.04), 0x6b4a2f, 0.16, 0.35, 0);
         add(new THREE.BoxGeometry(0.04, 0.25, 0.04), 0x6b4a2f, -0.16, 0.35, 0);
         break;
@@ -395,7 +768,8 @@ export class TownRenderer {
       case 'market': {
         add(new THREE.BoxGeometry(0.6, 0.1, 0.6), 0xa89070, 0, 0.05, 0);
         add(new THREE.BoxGeometry(0.5, 0.3, 0.4), 0xd8c8a8, 0, 0.25, -0.05);
-        const awning = add(new THREE.BoxGeometry(0.62, 0.05, 0.35), 0xc04a5a, 0, 0.45, 0.15);
+        const awning = add(new THREE.BoxGeometry(0.62, 0.05, 0.35), 0xc04a5a, 0, 0.45, 0.15, 0, roof);
+        win(0.12, 0.28, 0.152);
         awning.rotation.x = 0.25;
         add(new THREE.BoxGeometry(0.04, 0.4, 0.04), 0x6b4a2f, 0.26, 0.2, 0.26);
         add(new THREE.BoxGeometry(0.04, 0.4, 0.04), 0x6b4a2f, -0.26, 0.2, 0.26);
@@ -411,6 +785,7 @@ export class TownRenderer {
   /** Diff an immutable rules snapshot into the scene. */
   syncState(state) {
     if (!this.content) return;
+    this.lastState = state;
     const { w, h } = state.grid;
     // Terrain may change (forest cleared). Update render-owned copy + instance colors.
     for (let i = 0; i < w * h; i++) {
@@ -450,11 +825,13 @@ export class TownRenderer {
             if (existing) { this.buildGroup.remove(existing); disposeObj(existing); }
             const g = this._buildingGroup(b.type);
             g.position.set(this._wx(x), this.cellTopY(x, y), this._wz(y));
-            g.userData = { type: b.type, x, y };
+            Object.assign(g.userData, { type: b.type, x, y });
             this.buildGroup.add(g);
             this.buildingMeshes.set(k, g);
-            if (!this.reducedMotion) this.popAnims.push({ group: g, t: 0 });
-            this.burst(this._wx(x), this.cellTopY(x, y) + 0.4, this._wz(y), 0xd8c890, 10);
+            if (!this._quietSync) {
+              if (!this.reducedMotion) this.popAnims.push({ group: g, t: 0 });
+              this.burst(this._wx(x), this.cellTopY(x, y) + 0.4, this._wz(y), 0xd8c890, 10);
+            }
           }
           this._updateNeedSprite(k, x, y, b, state);
         }
@@ -501,7 +878,8 @@ export class TownRenderer {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('!', 32, 34);
     const tex = new THREE.CanvasTexture(c);
-    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false });
     const sp = new THREE.Sprite(mat);
     sp.scale.set(0.4, 0.4, 1);
     sp.layers.set(LAYER.FX);
@@ -514,18 +892,17 @@ export class TownRenderer {
     const ringGeo = new THREE.RingGeometry(0.42, 0.55, 24);
     ringGeo.rotateX(-Math.PI / 2);
     this.selectRing = new THREE.Mesh(ringGeo,
-      new THREE.MeshBasicMaterial({ color: this.palette.select, transparent: true, opacity: 0.9, depthTest: false }));
+      new THREE.MeshBasicMaterial({ color: this.palette.select, transparent: true, opacity: 0.9, depthTest: false, toneMapped: false }));
     this.selectRing.visible = false;
     this.selectRing.layers.set(LAYER.SELECT);
     this.selectRing.renderOrder = 10;
     this.selectGroup.add(this.selectRing);
 
     // Keyboard cursor (corners square)
-    const curGeo = new THREE.RingGeometry(0.45, 0.5, 4);
+    const curGeo = new THREE.RingGeometry(0.45, 0.5, 4, 1, Math.PI / 4);
     curGeo.rotateX(-Math.PI / 2);
     this.cursorMesh = new THREE.Mesh(curGeo,
-      new THREE.MeshBasicMaterial({ color: this.palette.cursor, transparent: true, opacity: 0.8, depthTest: false }));
-    this.cursorMesh.rotation.z = Math.PI / 4;
+      new THREE.MeshBasicMaterial({ color: this.palette.cursor, transparent: true, opacity: 0.8, depthTest: false, toneMapped: false }));
     this.cursorMesh.visible = false;
     this.cursorMesh.layers.set(LAYER.SELECT);
     this.cursorMesh.renderOrder = 10;
@@ -558,7 +935,10 @@ export class TownRenderer {
           o.material = o.material.clone();
           o.material.transparent = true;
           o.material.opacity = 0.55;
+          o.material.depthWrite = false;
+          if (o.material.emissive) o.material.emissive.setHex(0x000000);
           o.castShadow = false;
+          o.receiveShadow = false;
         }
         o.layers.set(LAYER.SELECT);
       });
@@ -643,15 +1023,19 @@ export class TownRenderer {
 
   // ---- Particles (pooled) --------------------------------------------------------------
   _initParticles() {
-    const MAX = 2000;
+    const MAX = MAX_PARTICLES;
     const geo = new THREE.BufferGeometry();
     this.pPos = new Float32Array(MAX * 3);
     this.pVel = new Float32Array(MAX * 3);
     this.pLife = new Float32Array(MAX);
+    this.pGrav = new Float32Array(MAX);
     this.pCol = new Float32Array(MAX * 3);
+    this.pPos.fill(-999);
+    this.poolSize = 0;
     geo.setAttribute('position', new THREE.BufferAttribute(this.pPos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(this.pCol, 3));
-    const mat = new THREE.PointsMaterial({ size: 0.08, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
+    // Soft round dots rather than hard squares.
+    const mat = new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, map: makeDotTexture() });
     this.points = new THREE.Points(geo, mat);
     this.points.layers.set(LAYER.FX);
     this.points.frustumCulled = false;
@@ -660,11 +1044,12 @@ export class TownRenderer {
   }
 
   burst(x, y, z, color, n = 12) {
-    if (!this.q.particles || this.reducedMotion) return;
+    if (!this.poolSize || this.motionReduced) return;
     const c = new THREE.Color(color);
     for (let i = 0; i < n; i++) {
       const idx = this.pHead;
-      this.pHead = (this.pHead + 1) % this.q.particles;
+      this.pHead = (this.pHead + 1) % this.poolSize;
+      this.pGrav[idx] = 3.5;
       this.pPos[idx * 3] = x; this.pPos[idx * 3 + 1] = y; this.pPos[idx * 3 + 2] = z;
       const a = Math.random() * Math.PI * 2;
       const v = 0.5 + Math.random() * 1.2;
@@ -676,12 +1061,28 @@ export class TownRenderer {
     }
   }
 
+  /** Slow chimney smoke puff (ambient; top particle tier only). */
+  _smoke(x, y, z) {
+    const idx = this.pHead;
+    this.pHead = (this.pHead + 1) % this.poolSize;
+    this.pPos[idx * 3] = x; this.pPos[idx * 3 + 1] = y; this.pPos[idx * 3 + 2] = z;
+    this.pVel[idx * 3] = 0.05 + Math.random() * 0.08;
+    this.pVel[idx * 3 + 1] = 0.22 + Math.random() * 0.16;
+    this.pVel[idx * 3 + 2] = 0.08 * (Math.random() - 0.5);
+    this.pLife[idx] = 1.2 + Math.random() * 0.6;
+    this.pGrav[idx] = -0.02;
+    const v = 0.78 + Math.random() * 0.1;
+    this.pCol[idx * 3] = v; this.pCol[idx * 3 + 1] = v * 0.98; this.pCol[idx * 3 + 2] = v * 0.95;
+  }
+
   _updateParticles(dt) {
     const dtS = dt / 1000;
-    for (let i = 0; i < this.q.particles; i++) {
+    if (!this.poolSize) { this.points.visible = false; return; }
+    this.points.visible = true;
+    for (let i = 0; i < this.poolSize; i++) {
       if (this.pLife[i] <= 0) { this.pPos[i * 3 + 1] = -999; continue; }
       this.pLife[i] -= dtS;
-      this.pVel[i * 3 + 1] -= 3.5 * dtS;
+      this.pVel[i * 3 + 1] -= this.pGrav[i] * dtS;
       this.pPos[i * 3] += this.pVel[i * 3] * dtS;
       this.pPos[i * 3 + 1] += this.pVel[i * 3 + 1] * dtS;
       this.pPos[i * 3 + 2] += this.pVel[i * 3 + 2] * dtS;
@@ -764,23 +1165,123 @@ export class TownRenderer {
   resize() {
     const wpx = this.container.clientWidth || 1;
     const hpx = this.container.clientHeight || 1;
-    this.renderer.setSize(wpx, hpx, false);
     this.camera.aspect = wpx / hpx;
     // Portrait: widen FOV slightly to keep the board readable.
     this.camera.fov = wpx < hpx ? 48 : 38;
     this.camera.updateProjectionMatrix();
+    this._applySize(true);
+  }
+
+  /** Pixel ratio = min(dpr, preset cap) × preset/user scale × adaptive scale. */
+  _applySize(force = false) {
+    const w = this.container.clientWidth || 1;
+    const h = this.container.clientHeight || 1;
+    const ratio = Math.min(window.devicePixelRatio || 1, this.q.dprCap) * this.q.scale * this.adaptiveScale;
+    if (!force && w === this.size[0] && h === this.size[1] && ratio === this.pixelRatio) return;
+    this.size = [w, h];
+    this.pixelRatio = ratio;
+    this.renderer.setPixelRatio(ratio);
+    this.renderer.setSize(w, h, false);
+  }
+
+  _postKey() {
+    const g = this.q;
+    return g.post ? [g.ao, g.bloom, g.grade, g.antialias, this.size[0], this.size[1], this.pixelRatio].join('|') : 'none';
+  }
+
+  _buildPost() {
+    const g = this.q;
+    if (this.composer) {
+      this.composer.passes.forEach(p => p.dispose && p.dispose());
+      this.composer.dispose();
+    }
+    this.composer = null;
+    if (!g.post || this.postFailed) return;
+    const [w, h] = this.size;
+    const pr = this.pixelRatio;
+    try {
+      const target = new THREE.WebGLRenderTarget(w * pr, h * pr, {
+        type: THREE.HalfFloatType, samples: g.antialias === 'msaa' ? 4 : 0,
+      });
+      const composer = new EffectComposer(this.renderer, target);
+      composer.setPixelRatio(pr);
+      composer.setSize(w, h);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      if (g.ao !== 'off') {
+        const ao = new GTAOPass(this.scene, this.camera, w * pr, h * pr);
+        ao.output = GTAOPass.OUTPUT.Default;
+        ao.blendIntensity = g.ao === 'high' ? 0.85 : 0.7;
+        ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 0.6, scale: 1.0, samples: g.ao === 'high' ? 16 : 8 });
+        ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: g.ao === 'high' ? 6 : 4, rings: 2, samples: g.ao === 'high' ? 16 : 8 });
+        // Keep sprites, selection markers, particles and the background out of the
+        // AO depth/normal pass (a texture background would otherwise be drawn there
+        // as a world-space quad with the override material).
+        const hide = ao.overrideVisibility.bind(ao);
+        const restore = ao.restoreVisibility.bind(ao);
+        let bg = null;
+        ao.overrideVisibility = () => {
+          hide();
+          this.fxGroup.visible = false; this.selectGroup.visible = false;
+          bg = this.scene.background; this.scene.background = null;
+        };
+        ao.restoreVisibility = () => { restore(); this.scene.background = bg; };
+        composer.addPass(ao);
+      }
+      if (g.bloom === 'on') {
+        // High threshold: only window glow, water glints and bright highlights bloom.
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.4, 0.9));
+      }
+      composer.addPass(new OutputPass());
+      if (g.grade === 'on') composer.addPass(new ShaderPass(GradeShader));
+      if (g.antialias === 'smaa') composer.addPass(new SMAAPass(w * pr, h * pr));
+      if (g.antialias === 'fxaa') {
+        const fxaa = new ShaderPass(FXAAShader);
+        fxaa.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+        composer.addPass(fxaa);
+      }
+      this.composer = composer;
+    } catch {
+      // Post-processing is an enhancement: render directly and say so in the panel.
+      this.postFailed = true;
+      this.composer = null;
+    }
+  }
+
+  // Adaptive resolution: step the render scale down when frames are slow, back up when fast.
+  _adapt(dt) {
+    // Frame-rate readout refreshes about twice a second.
+    this._fpsT = (this._fpsT || 0) + dt; this._fpsN = (this._fpsN || 0) + 1;
+    if (this._fpsT >= 500) {
+      this.fps = 1000 * this._fpsN / this._fpsT;
+      this._fpsT = 0; this._fpsN = 0;
+      const el = document.getElementById('fps-meter');
+      if (el && !el.hidden) el.textContent = `${Math.round(this.fps)} fps · ${Math.round(this.pixelRatio * 100) / 100}×`;
+    }
+    const f = this._frames;
+    f.push(dt);
+    if (f.length < 90) return;
+    const avg = f.reduce((a, b) => a + b, 0) / f.length;
+    f.length = 0;
+    if (!this.q.adaptive) return;
+    if (avg > 26) this.adaptiveScale = Math.max(0.6, Math.round((this.adaptiveScale - 0.1) * 100) / 100);
+    else if (avg < 14 && this.adaptiveScale < 1) this.adaptiveScale = Math.min(1, Math.round((this.adaptiveScale + 0.05) * 100) / 100);
   }
 
   update(dtMs, visible = true) {
     if (!visible) return; // background tabs: render heartbeat handled by caller
     this.time += dtMs;
     const t = this.time / 1000;
-    // Water bobbing (bounded, decorative).
+    const moving = !this.motionReduced;
+    const waterAnim = moving && this.q.water === 'animated';
+    // Water bobbing (bounded, decorative) and a slow drifting normal-map shimmer.
     for (let i = 0; i < this.waterMeshes.length; i++) {
-      this.waterMeshes[i].position.y = -0.27 + Math.sin(t * 1.4 + this.waterPhase[i]) * 0.02;
+      this.waterMeshes[i].position.y = -0.27 + (waterAnim ? Math.sin(t * 1.4 + this.waterPhase[i]) * 0.02 : 0);
+    }
+    if (waterAnim && this.waterMat && this.waterMat.normalMap) {
+      this.waterMat.normalMap.offset.set(t * 0.03, t * 0.017);
     }
     // Clouds drift.
-    if (this.clouds && !this.reducedMotion) {
+    if (this.clouds && moving) {
       for (const c of this.clouds) {
         c.position.x += c.userData.speed * dtMs / 1000;
         if (c.position.x > 24) c.position.x = -24;
@@ -801,13 +1302,41 @@ export class TownRenderer {
       if (a.t >= 1) { a.group.scale.setScalar(1); this.popAnims.splice(i, 1); }
     }
     // Need sprites bob.
-    for (const sp of this.needSprites.values()) {
-      sp.position.y += Math.sin(t * 3 + sp.position.x) * 0.0006;
+    if (moving) {
+      for (const sp of this.needSprites.values()) {
+        sp.position.y += Math.sin(t * 3 + sp.position.x) * 0.0006;
+      }
+    }
+    // Chimney smoke (top particle tier, full motion only).
+    if (this.q.particles === 'high' && moving) {
+      this.smokeTimer += dtMs;
+      if (this.smokeTimer > 260) {
+        this.smokeTimer = 0;
+        const houses = [];
+        for (const g of this.buildingMeshes.values()) if (g.userData.chimney) houses.push(g);
+        if (houses.length) {
+          const g = houses[(Math.random() * houses.length) | 0];
+          const c = g.userData.chimney;
+          this._smoke(g.position.x + c.position.x, g.position.y + c.position.y + 0.1, g.position.z + c.position.z);
+        }
+      }
     }
     this.shake = Math.max(0, this.shake - dtMs / 300);
     this._updateParticles(dtMs);
     this._applyCamera(0);
-    this.renderer.render(this.scene, this.camera);
+    this._render(dtMs);
+  }
+
+  _render(dtMs) {
+    this._adapt(dtMs);
+    this._applySize();
+    const key = this._postKey();
+    if (key !== this.postKey) {
+      this.postKey = key;
+      this._buildPost();
+    }
+    if (this.composer) this.composer.render(dtMs / 1000);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   // Debug/validation: draw-call & triangle evidence.
@@ -816,11 +1345,14 @@ export class TownRenderer {
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       quality: this.qualityName,
+      pixelRatio: this.pixelRatio,
+      post: !!this.composer,
     };
   }
 
   dispose() {
     window.removeEventListener('resize', this._resize);
+    if (this.composer) this.composer.dispose();
     disposeObj(this.scene);
     this.renderer.dispose();
     this.renderer.domElement.remove();

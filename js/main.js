@@ -8,6 +8,8 @@ import * as store from './store.js';
 import { Platform } from './platform.js';
 import { AudioEngine } from './audio.js';
 import { UI } from './ui.js';
+import { PRESETS, CATEGORIES, choosePreset, presetTier, resolve } from './gfx.js';
+import { gfxStrings } from './gfx-strings.js';
 
 const state = {
   platform: null,
@@ -128,10 +130,11 @@ function buildSettings(body) {
     slider('set-voice', 'Voice', 'voice'),
     toggle('set-mute', 'Mute all audio', 'muteAll'),
   );
+  const gfx = document.createElement('div'); gfx.className = 'set-group'; gfx.id = 'gfx-section';
+  buildGraphicsSection(gfx, save);
   const g2 = document.createElement('div'); g2.className = 'set-group';
-  g2.innerHTML = '<h3>Graphics</h3>';
+  g2.innerHTML = '<h3>Display &amp; motion</h3>';
   g2.append(
-    select('set-quality', 'Quality tier', 'quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']]),
     toggle('set-motion', 'Reduced motion', 'reducedMotion'),
     toggle('set-contrast', 'High contrast', 'highContrast'),
     select('set-palette', 'Color palette', 'colorPalette', [['default', 'Default'], ['deuteranopia', 'Deuteranopia-safe'], ['protanopia', 'Protanopia-safe'], ['tritanopia', 'Tritanopia-safe']]),
@@ -156,7 +159,119 @@ function buildSettings(body) {
   });
   g3.appendChild(replayBtn);
   // (No privacy/telemetry group: hosted telemetry endpoints do not exist.)
-  body.append(g1, g2, g3);
+  body.append(g1, gfx, g2, g3);
+}
+
+// ---- Graphics section (quality presets, render scale, per-effect overrides) ----------
+function buildGraphicsSection(root, save) {
+  const L = gfxStrings(navigator.language);
+  const ui = state.ui;
+  const view = state.view;
+  const detected = view ? view.detected : 'balanced';
+  const gs = () => (state.settings.graphics = state.settings.graphics || {});
+  const r = resolve(gs(), detected);
+  root.innerHTML = '';
+  const h = document.createElement('h3');
+  h.textContent = L.heading;
+  root.appendChild(h);
+
+  const mkSelect = (id, options, value, onChange) => {
+    const sel = document.createElement('select');
+    sel.id = id;
+    for (const [v, name] of options) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = name;
+      if (v === value) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => onChange(sel.value));
+    return sel;
+  };
+
+  // Quality preset: choosing one clears per-category overrides.
+  const presetSel = mkSelect('gfx-preset',
+    [['auto', L.auto.replace('{tier}', L.presets[detected])], ...PRESETS.map(p => [p, L.presets[p]])],
+    PRESETS.includes(gs().preset) ? gs().preset : 'auto',
+    (v) => {
+      state.settings.graphics = choosePreset(gs(), v);
+      save();
+      buildGraphicsSection(root, save);
+      document.getElementById('gfx-preset')?.focus();
+    });
+  presetSel.dataset.gfx = 'preset';
+  root.appendChild(ui.settingsRow(L.quality, presetSel));
+
+  // Render scale 50–200 % (multiplies the preset's own scale).
+  const scaleWrap = document.createElement('div');
+  scaleWrap.className = 'gfx-scale';
+  const range = document.createElement('input');
+  range.type = 'range'; range.min = 50; range.max = 200; range.step = 5; range.id = 'gfx-scale';
+  range.dataset.gfx = 'render_scale';
+  range.value = Math.round((Number(gs().render_scale) || 1) * 100);
+  const out = document.createElement('output');
+  out.htmlFor = 'gfx-scale';
+  out.textContent = range.value + '%';
+  range.addEventListener('input', () => {
+    out.textContent = range.value + '%';
+    gs().render_scale = Number(range.value) / 100;
+    save();
+    refreshGraphicsSummary();
+  });
+  scaleWrap.append(range, out);
+  const scaleRow = ui.settingsRow(L.renderScale, scaleWrap);
+  scaleRow.querySelector('label').htmlFor = 'gfx-scale';
+  root.appendChild(scaleRow);
+
+  // One override per category, defaulting to the preset's tier.
+  for (const [cat, tiers] of Object.entries(CATEGORIES)) {
+    const own = presetTier(r.preset, cat);
+    const cur = tiers.includes(gs()[cat]) ? gs()[cat] : 'preset';
+    const sel = mkSelect('gfx-' + cat,
+      [['preset', L.fromPreset.replace('{tier}', L.tiers[own] || own)], ...tiers.map(t => [t, L.tiers[t] || t])],
+      cur,
+      (v) => {
+        if (v === 'preset') delete gs()[cat]; else gs()[cat] = v;
+        save();
+        refreshGraphicsSummary();
+      });
+    sel.dataset.gfxCat = cat;
+    root.appendChild(ui.settingsRow(L.categories[cat], sel));
+  }
+
+  const check = (id, label, key, def) => {
+    const input = document.createElement('input');
+    input.type = 'checkbox'; input.id = id;
+    input.checked = key in gs() ? !!gs()[key] : def;
+    input.dataset.gfx = key;
+    input.addEventListener('change', () => { gs()[key] = input.checked; save(); refreshGraphicsSummary(); });
+    return ui.settingsRow(label, input);
+  };
+  root.append(check('gfx-adaptive', L.adaptive, 'adaptive', true), check('gfx-fps', L.showFps, 'show_fps', false));
+
+  const summary = document.createElement('p');
+  summary.id = 'gfx-summary'; summary.className = 'gfx-summary';
+  summary.setAttribute('aria-live', 'polite');
+  const note = document.createElement('p');
+  note.id = 'gfx-note'; note.className = 'gfx-note'; note.hidden = true;
+  note.textContent = L.postUnavailable;
+  root.append(summary, note);
+  refreshGraphicsSummary();
+  clearInterval(state.gfxTimer);
+  state.gfxTimer = setInterval(() => {
+    if (!$('screen-settings').classList.contains('active')) { clearInterval(state.gfxTimer); return; }
+    refreshGraphicsSummary();
+  }, 1000);
+}
+
+function refreshGraphicsSummary() {
+  const el = $('gfx-summary');
+  if (!el) return;
+  const info = state.view?.graphicsInfo();
+  if (!info) { el.textContent = 'WebGL unavailable'; return; }
+  el.textContent = [info.gpu, info.summary].filter(Boolean).join(' · ');
+  el.dataset.preset = info.resolved.preset;
+  const note = $('gfx-note');
+  if (note) note.hidden = !info.postFailed;
 }
 
 // ---- mode pickers ----------------------------------------------------------------------

@@ -9,7 +9,10 @@ function ok(cond, name) { if (cond) passed++; else { failed++; console.error('FA
 // Settings round-trip
 {
   const s = store.loadSettings();
-  ok(s.quality === 'auto' && typeof s.music === 'number', 'default settings loaded');
+  ok(s.graphics && typeof s.graphics === 'object' && !s.graphics.preset && typeof s.music === 'number', 'default settings loaded (graphics = Auto)');
+  const legacy = store.migrateSettings({ quality: 'medium', graphics: {} });
+  ok(legacy.graphics.preset === 'balanced' && !('quality' in legacy), 'legacy quality tier migrates to a graphics preset');
+  ok(!store.migrateSettings({ quality: 'auto' }).graphics.preset, 'legacy auto stays Auto');
   s.music = 0.25; s.reducedMotion = true;
   store.saveSettings(s);
   const s2 = store.loadSettings();
