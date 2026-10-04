@@ -964,8 +964,10 @@ export class TownRenderer {
     // Pan in view space.
     const s = this.camDist * 0.0016;
     const sin = Math.sin(this.camTheta), cos = Math.cos(this.camTheta);
-    this.camTargetGoal.x += (dx * cos - dz * sin) * s * -1;
-    this.camTargetGoal.z += (dx * sin + dz * cos) * s * -1;
+    // Screen-right is (cos, -sin), screen-down is (sin, cos) on X/Z.
+    // Move the camera opposite the drag so the board follows the pointer.
+    this.camTargetGoal.x -= (dx * cos + dz * sin) * s;
+    this.camTargetGoal.z += (dx * sin - dz * cos) * s;
     this._clampTarget();
   }
 

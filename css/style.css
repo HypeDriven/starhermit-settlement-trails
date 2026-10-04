@@ -115,6 +115,8 @@ button { font: inherit; }
 .title-actions { display: flex; flex-direction: column; gap: .6rem; margin: 1.5rem 0 1rem; }
 .title-secondary { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
 .profile-line { margin-top: 1.2rem; color: var(--ink-dim); font-size: .9rem; }
+.title-account { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-top: .6rem; }
+.title-account:not(:has(.btn:not(.hidden))) { display: none; }
 
 /* ---------- picker ---------- */
 #screen-picker { align-items: center; justify-content: center; background: var(--bg); }
@@ -310,6 +312,7 @@ kbd {
 @media (max-height: 500px) and (orientation: landscape) {
   .rail { top: 3rem; bottom: 5rem; width: 14rem; font-size: .85rem; }
   .toolbox { left: auto; right: calc(.5rem + var(--safe-right)); transform: none; flex-direction: column; max-height: 70vh; }
+  html.left-handed .toolbox { right: auto; left: calc(.5rem + var(--safe-left)); }
   .tool { min-width: 48px; min-height: 44px; }
   .tutorial-card { bottom: auto; top: 3.4rem; }
   /* Title and picker/overlay panels: scrollable, safe-centred so nothing sits

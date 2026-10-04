@@ -195,13 +195,14 @@ No module may mutate rules state except through a validated command. Rendering c
 
 ### Packaging and launch
 - Ship a browser distribution with `starhermit.txt` at its root, `name=Settlement Trails`, and `launch=index.html`. Keep source files, secrets, design documents, and source maps outside the uploaded distribution.
-- Read the game scope from the short-lived launch token (URL fragment `#game_token=`, stripped after read; query params are local-dev only) rather than hard-coding a slug. Use same-origin `/api` routes when hosted. Re-mint scoped launch tokens via `POST /api/v1/games/{slug}/launch-token` on a 45-minute cadence; never persist access or launch tokens in local storage.
-- Synchronize countdowns and daily boundaries with `GET /api/v1/time` (the game's own backend) using round-trip-adjusted offset, falling back to the device clock when unreachable. Treat rate limits and structured `{"error":"..."}` responses as recoverable UI states.
+- `starhermit-sdk.js` (an unmodified copy of the canonical StarHermit SDK) loads before the game and `StarHermit.init()` runs inline at page load. It reads `#game_token=` (library launch) or `#access_token=` (sign-in return), strips them from the URL, takes the slug from the token's `game_scope` claim, and renews the launch token on its own schedule. `js/platform.js` is a thin adapter over `window.StarHermit`; when renewal is refused the game shows a localized notice, re-offers sign-in and keeps playing locally. Standalone (no token) it makes no network calls.
+- Countdowns and daily boundaries sync with `GET /api/v1/time` (the game's own backend) using a round-trip-adjusted offset, falling back to the device clock when unreachable.
 
 ### Identity, profile, presence, and preferences
-- Support guest practice locally, then offer account sign-in for durable progress. Use the platform nickname (`GET /api/v1/users/{id}/profile`, never usernames) only where identity is useful and honor profile privacy. Presence heartbeats are not sent: launch tokens have no per-game presence endpoint.
-- Store accessibility, audio, graphics tier, tutorial completion, camera preference, and rules options through per-game settings. Declare desktop action bindings and read player overrides; touch mappings remain responsive UI controls.
-- Cloud-save progression as a versioned, checksummed document, mirrored to the platform cloud-save slot (`GET`/`PUT /api/v1/me/cloud-saves/{slug}`, one zip+base64 slot) when hosted; the remote doc wins on load, localStorage stays the offline cache, and saves debounce ~2 s with a pagehide flush. Never place credentials or private chat in saves.
+- Guests play locally. On `*.starhermit.com` without a token the title shows **Sign in with StarHermit** (`StarHermit.signIn()`); it is hidden when signed in and when running locally. When signed in the title line shows the profile nickname (fallback `Player <id prefix>`), and an **Invite a friend** button copies `StarHermit.inviteLink()` to the clipboard with a toast. These controls are localized in the 9 supported locales (`js/sh-strings.js`).
+- Audio levels, mute, graphics settings, accessibility (motion, contrast, palette, text size, handedness, hold-to-pan, haptics, camera shake) and day length are mirrored to the per-game settings KV with `patchSettings` on change; on start the platform values win over local ones.
+- Keyboard actions are declared as `control.*` lines in `starhermit.txt`; at start `StarHermit.loadBindings()` applies the player's overrides, keydown is routed by `event.code`, and the Help screen shows the effective keys. Touch and gamepad mappings remain built-in.
+- Progression (settings, journey progress, achievements, local boards, autosave) is a versioned, checksummed document mirrored to the cloud-save slot `game:<slug>` via the SDK: loaded remote-first on start, saved debounced at checkpoints with `saveJSON`, flushed with `flushSave(true)` on pagehide/hidden. localStorage stays the offline cache. Never place credentials or private chat in saves.
 
 ### Discovery, activity, and social layer
 - Playtime/activity tracking is host-owned; the game does not call activity endpoints (none exist for launch tokens). Surface entitlement or catalog state only in host-owned chrome; the game itself must remain playable without promotional interruption.
@@ -210,7 +211,7 @@ No module may mutate rules state except through a validated command. Rendering c
 
 ### Achievements and leaderboards
 - Declare a small static achievement set: first completion, mechanic mastery, a sustained streak, a difficult content milestone, and an accessibility-neutral long-term goal. Keys are stable, lowercase identifiers; unlocks are idempotent.
-- Provide global and friends-filtered boards for the primary metric plus a fair daily/weekly board. Include ruleset, content version, seed, assists, and duration with every submission; reject impossible or stale-version scores. The platform leaderboard is read-only (`GET /api/v1/games/{slug}` → `GET /api/v1/leaderboards/{id}/entries`); clients never submit to it.
+- Provide global and friends-filtered boards for the primary metric plus a fair daily/weekly board. Include ruleset, content version, seed, assists, and duration with every submission; reject impossible or stale-version scores. The platform leaderboard is read-only (`StarHermit.leaderboard()` → entries resolved to nicknames on the Global tab); clients never submit to it.
 - For globally competitive boards, validate score claims through a lightweight authoritative script using replayable input logs and deterministic seeds. If validation is unavailable, label the board casual and apply plausibility/rate checks.
 
 ### Sessions and transport
@@ -273,3 +274,7 @@ This document does **not** authorize implementation, asset production, monetizat
 ## Browser interference
 
 `browser-guard.js` (loaded from `index.html`) suppresses browser UI that gets in the way of play: the right-click context menu, the iOS long-press callout, copy / cut / paste, and page text selection. Text fields (inputs, textareas, selects, contenteditable) keep normal selection, context menu and clipboard behaviour.
+
+## Directional controls
+
+Arrow keys and gamepad directions move the cursor toward the corresponding screen edge. Left-handed mode repositions the landscape touch toolbox without reversing directions. Camera drags move the board with the pointer on both screen axes.

@@ -10,6 +10,7 @@ import { AudioEngine } from './audio.js';
 import { UI } from './ui.js';
 import { PRESETS, CATEGORIES, choosePreset, presetTier, resolve } from './gfx.js';
 import { gfxStrings } from './gfx-strings.js';
+import { shStrings } from './sh-strings.js';
 
 const state = {
   platform: null,
@@ -47,6 +48,7 @@ async function boot() {
   state.ui = new UI();
   state.ui.bind(uiHandlers());
   state.platform.onSyncStatus = () => refreshTitle();
+  wireAccount();
 
   // WebGL capability detection with graceful fallback message.
   try {
@@ -76,11 +78,33 @@ function refreshTitle() {
     journeyTotal: C.JOURNEY_STAGES.length,
     hasSave: !!store.loadAutosave(),
   });
+  refreshAccount();
+}
+
+// ---- StarHermit account controls ----------------------------------------------------
+function wireAccount() {
+  const L = shStrings(navigator.language);
+  $('btn-signin').textContent = L.signIn;
+  $('btn-invite').textContent = L.invite;
+  $('btn-signin').addEventListener('click', () => state.platform.signIn());
+  $('btn-invite').addEventListener('click', async () => {
+    const link = state.platform.inviteLink();
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); state.ui.toast(L.copied); }
+    catch { state.ui.toast(L.copyFailed + ': ' + link, true); }
+  });
+  state.platform.onAuthChange = () => { state.ui.toast(L.signedOut); refreshTitle(); };
+}
+
+function refreshAccount() {
+  $('btn-signin').classList.toggle('hidden', !state.platform.canSignIn());
+  $('btn-invite').classList.toggle('hidden', !state.platform.inviteLink());
 }
 
 // ---- settings ----------------------------------------------------------------------
 function applySettingsToDom() {
   const s = state.settings;
+  document.documentElement.classList.toggle('left-handed', !!s.leftHanded);
   document.documentElement.dataset.motion = s.reducedMotion ? 'reduced' : 'full';
   document.documentElement.dataset.contrast = s.highContrast ? 'high' : 'normal';
   document.documentElement.dataset.textSize = s.textSize === 'large' ? 'large' : 'normal';
@@ -93,7 +117,7 @@ function buildSettings(body) {
   const s = state.settings;
   body.innerHTML = '';
   const ui = state.ui;
-  const save = () => { store.saveSettings(state.settings); applySettingsToDom(); state.platform.cloudNotifyChanged(); };
+  const save = () => { store.saveSettings(state.settings); applySettingsToDom(); state.platform.pushSettings(state.settings); state.platform.cloudNotifyChanged(); };
 
   const slider = (id, label, key) => {
     const input = document.createElement('input');
@@ -145,7 +169,7 @@ function buildSettings(body) {
   g3.append(
     select('set-text', 'Text size', 'textSize', [['normal', 'Normal'], ['large', 'Large']]),
     select('set-daylen', 'Day length (timing assistance)', 'dayLength', [['normal', 'Normal'], ['relaxed', 'Relaxed (slower days)']]),
-    toggle('set-left', 'Left-handed controls', 'leftHanded'),
+    toggle('set-left', 'Left-handed layout', 'leftHanded'),
     toggle('set-haptics', 'Haptics', 'haptics'),
   );
   const replayBtn = document.createElement('button');
@@ -320,7 +344,7 @@ function uiHandlers() {
     onTool: (tool) => setTool(tool),
     onBoardTab: (board) => renderBoard(board),
     onBuildSettings: buildSettings,
-    onBuildHelp: (body) => { body.innerHTML = ''; body.appendChild(state.ui.helpContent(state.settings.bindings)); },
+    onBuildHelp: (body) => { body.innerHTML = ''; body.appendChild(state.ui.helpContent(keyLabels())); },
     onOverlayClosed: (id) => {
       if (id === 'screen-pause' && state.session && !state.session.finished) {
         // Closing pause overlay via backdrop path: resume.
@@ -583,13 +607,26 @@ function setTool(tool) {
 }
 
 // ---- input: keyboard ----------------------------------------------------------------------
+// Bindings come from the platform controls (player overrides) or the defaults.
+function keyAction(code) {
+  const c = state.platform.controls;
+  for (const a in c) if (c[a].includes(code)) return a;
+  return null;
+}
+
+function keyLabels() {
+  const c = state.platform.controls, first = (a) => (c[a] || [])[0] || '';
+  return { confirm: first('confirm'), cancel: first('pause'), undo: first('undo'), hint: first('hint'),
+    speed: first('speed'), cameraReset: first('camera') };
+}
+
 function wireKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     const inGame = $('screen-game').classList.contains('active');
     const overlay = state.ui.topOverlay;
-    const b = state.settings.bindings;
-    if (e.code === 'Escape') {
+    const action = keyAction(e.code);
+    if (action === 'pause') {
       if (overlay === 'screen-settings') return state.ui.closeOverlay('screen-settings');
       if (overlay === 'screen-help') return state.ui.closeOverlay('screen-help');
       if (overlay === 'screen-scores') return state.ui.closeOverlay('screen-scores');
@@ -619,22 +656,22 @@ function wireKeyboard() {
       if (state.view) { state.view.setCursor(cur.x, cur.y); onTileHover(cur); }
       e.preventDefault();
     };
-    switch (e.code) {
-      case 'ArrowUp': case 'KeyW': return move(0, -1);
-      case 'ArrowDown': case 'KeyS': return move(0, 1);
-      case 'ArrowLeft': return move(state.settings.leftHanded ? 1 : -1, 0);
-      case 'ArrowRight': return move(state.settings.leftHanded ? -1 : 1, 0);
-      case b.confirm: case 'NumpadEnter': onTileTap(cur.x, cur.y); return;
-      case b.undo: return uiHandlers().onUndo();
-      case b.hint: return showHint();
-      case b.speed: return uiHandlers().onCycleSpeed();
-      case b.cameraReset: return state.view?.resetCamera();
-      case 'KeyI': return setTool('inspect');
-      case b.demolish: return setTool('demolish');
+    switch (action) {
+      case 'up': return move(0, -1);
+      case 'down': return move(0, 1);
+      case 'left': return move(-1, 0);
+      case 'right': return move(1, 0);
+      case 'confirm': onTileTap(cur.x, cur.y); return;
+      case 'undo': return uiHandlers().onUndo();
+      case 'hint': return showHint();
+      case 'speed': return uiHandlers().onCycleSpeed();
+      case 'camera': return state.view?.resetCamera();
+      case 'inspect': return setTool('inspect');
+      case 'demolish': return setTool('demolish');
       default: break;
     }
     // Number keys select tools.
-    const n = parseInt(e.key, 10);
+    const n = /^tool\d$/.test(action || '') ? Number(action.slice(4)) : 0;
     if (n >= 1 && n <= 9) {
       const tools = ['inspect', ...R.BUILD_ORDER.filter(t => state.session?.state.mechanics.includes(t)), 'demolish'];
       if (tools[n - 1]) setTool(tools[n - 1]);

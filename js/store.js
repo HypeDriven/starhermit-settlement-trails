@@ -64,10 +64,6 @@ export const DEFAULT_SETTINGS = {
   cameraShake: true,
   tutorialsDone: [],
   dayLength: 'normal',       // timing assistance: normal | relaxed
-  bindings: {                // desktop action bindings (remappable)
-    pause: 'Escape', undo: 'KeyU', hint: 'KeyH', demolish: 'KeyX',
-    speed: 'Space', cameraReset: 'KeyC', confirm: 'Enter', cancel: 'Escape',
-  },
 };
 
 export const loadSettings = () => migrateSettings(readDoc('settings', DEFAULT_SETTINGS));

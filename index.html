@@ -9,6 +9,8 @@
 <meta name="description" content="Settlement Trails — a cozy settlement builder. Place homes, roads and services, keep residents happy, fulfil trade orders.">
 <link rel="stylesheet" href="css/style.css">
 <script src="browser-guard.js"></script>
+<script src="starhermit-sdk.js"></script>
+<script>StarHermit.init();</script>
 </head>
 <body>
 <a class="skip-link" href="#toolbox">Skip to build tools</a>
@@ -33,6 +35,10 @@
         <button id="btn-settings" class="btn small">Settings</button>
       </div>
       <p id="profile-line" class="profile-line"></p>
+      <div class="title-account">
+        <button id="btn-signin" class="btn small hidden">Sign in with StarHermit</button>
+        <button id="btn-invite" class="btn small hidden">Invite a friend</button>
+      </div>
       <button id="btn-resume" class="btn ghost hidden">↩ Resume saved settlement</button>
     </div>
   </section>
