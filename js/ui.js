@@ -5,6 +5,8 @@
 import { BUILDINGS, BUILD_ORDER, TERRAIN_NAME, INVALID_REASONS } from './rules.js';
 import { ACHIEVEMENTS } from './store.js';
 
+/** Matches the CSS portrait-phone layout where both rails are bottom drawers in the same spot. */
+export const PORTRAIT_DRAWERS = '(max-width: 700px) and (orientation: portrait)';
 const TOOL_ICONS = { road: '🛤', house: '🏠', farm: '🌾', lumber: '🪓', well: '💧', market: '⚖️', demolish: '✖️', inspect: '🔍' };
 
 function $(id) { return document.getElementById(id); }
@@ -61,8 +63,13 @@ export class UI {
     $('btn-undo').addEventListener('click', () => handlers.onUndo());
     $('btn-hint').addEventListener('click', () => handlers.onHint());
     $('btn-center').addEventListener('click', () => handlers.onCenter());
-    $('rail-left-toggle').addEventListener('click', () => $('rail-left').classList.toggle('open'));
-    $('rail-right-toggle').addEventListener('click', () => $('rail-right').classList.toggle('open'));
+    // Portrait phones stack both drawers in the same spot: opening one closes the other.
+    const toggleRail = (id, other) => {
+      const open = $(id).classList.toggle('open');
+      if (open && matchMedia(PORTRAIT_DRAWERS).matches) $(other).classList.remove('open');
+    };
+    $('rail-left-toggle').addEventListener('click', () => toggleRail('rail-left', 'rail-right'));
+    $('rail-right-toggle').addEventListener('click', () => toggleRail('rail-right', 'rail-left'));
     document.querySelectorAll('[data-back]').forEach(b =>
       b.addEventListener('click', () => this.show('screen-title')));
     document.querySelectorAll('.tab').forEach(t =>

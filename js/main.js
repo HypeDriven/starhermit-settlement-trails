@@ -7,7 +7,7 @@ import { Session } from './session.js';
 import * as store from './store.js';
 import { Platform } from './platform.js';
 import { AudioEngine } from './audio.js';
-import { UI } from './ui.js';
+import { UI, PORTRAIT_DRAWERS } from './ui.js';
 import { PRESETS, CATEGORIES, choosePreset, presetTier, resolve } from './gfx.js';
 import { gfxStrings } from './gfx-strings.js';
 import { shStrings } from './sh-strings.js';
@@ -598,6 +598,7 @@ function inspectTile(x, y, extra = {}) {
   const info = evald.houses.get(y * st.grid.w + x);
   state.ui.inspect(st, x, y, info || extra);
   $('rail-right').classList.add('open');
+  if (matchMedia(PORTRAIT_DRAWERS).matches) $('rail-left').classList.remove('open');
 }
 
 function setTool(tool) {

@@ -65,11 +65,11 @@ button { font: inherit; }
   box-shadow: var(--shadow);
   padding: 1.25rem 1.5rem;
   max-width: 34rem;
-  width: min(92vw, 34rem);
-  max-height: min(88vh, 100%);
+  width: min(calc(92vw / var(--ui-scale, 1)), 34rem);
+  max-height: min(calc(88vh / var(--ui-scale, 1)), 100%);
   overflow: auto;
 }
-.panel.wide { max-width: 44rem; width: min(94vw, 44rem); }
+.panel.wide { max-width: 44rem; width: min(calc(94vw / var(--ui-scale, 1)), 44rem); }
 .panel-head { display: flex; align-items: center; gap: 1rem; justify-content: space-between; margin-bottom: .75rem; }
 .panel-head h2 { margin: 0; }
 
@@ -110,7 +110,7 @@ button { font: inherit; }
     linear-gradient(#16211a, #1c2a22);
 }
 .title-card { text-align: center; padding: 2rem; max-width: 34rem; }
-.title-card h1 { font-size: clamp(2.4rem, 7vw, 4rem); margin: 0 0 .25rem; letter-spacing: .02em; }
+.title-card h1 { font-size: clamp(2.4rem, calc(7vw / var(--ui-scale, 1)), 4rem); margin: 0 0 .25rem; letter-spacing: .02em; }
 .tagline { color: var(--ink-dim); margin-top: 0; }
 .title-actions { display: flex; flex-direction: column; gap: .6rem; margin: 1.5rem 0 1rem; }
 .title-secondary { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
@@ -194,7 +194,7 @@ button { font: inherit; }
   display: flex; gap: .45rem; z-index: 10;
   background: rgba(22,33,25,.9); border: 1px solid rgba(255,255,255,.1);
   border-radius: 14px; padding: .45rem;
-  max-width: calc(100vw - 1rem); overflow-x: auto;
+  max-width: calc(calc(100vw / var(--ui-scale, 1)) - 1rem); overflow-x: auto;
 }
 .tool {
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
@@ -215,7 +215,7 @@ button { font: inherit; }
   bottom: calc(6.2rem + var(--safe-bottom));
   background: var(--panel); border: 2px solid var(--accent);
   border-radius: var(--radius); padding: .7rem 1.1rem;
-  max-width: min(92vw, 30rem); z-index: 12; box-shadow: var(--shadow);
+  max-width: min(calc(92vw / var(--ui-scale, 1)), 30rem); z-index: 12; box-shadow: var(--shadow);
 }
 .tutorial-card h3 { margin: 0 0 .25rem; color: var(--accent); }
 
@@ -269,13 +269,13 @@ kbd {
 /* ---------- countdown & toast ---------- */
 .countdown {
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: clamp(4rem, 18vw, 9rem); font-weight: 900; color: var(--accent);
+  font-size: clamp(4rem, calc(18vw / var(--ui-scale, 1)), 9rem); font-weight: 900; color: var(--accent);
   text-shadow: 0 4px 24px rgba(0,0,0,.6); z-index: 30; pointer-events: none;
 }
 .toast {
   position: fixed; left: 50%; bottom: calc(7.5rem + var(--safe-bottom)); transform: translateX(-50%);
   background: rgba(20,30,22,.95); border: 1px solid var(--accent);
-  border-radius: 10px; padding: .5rem 1rem; z-index: 35; max-width: 90vw;
+  border-radius: 10px; padding: .5rem 1rem; z-index: 35; max-width: calc(90vw / var(--ui-scale, 1));
   box-shadow: var(--shadow);
 }
 .toast.err { border-color: var(--danger); }
@@ -293,7 +293,12 @@ kbd {
   #rail-left:not(.open) { transform: translateX(-110%); }
   #rail-right:not(.open) { transform: translateX(110%); }
   .rail-toggle { display: block; }
-  .rail { top: 4rem; bottom: 7rem; width: min(20rem, 78vw); }
+  .rail { top: 4rem; bottom: 7rem; width: min(20rem, calc(78vw / var(--ui-scale, 1))); }
+  /* An opened drawer sits above the lesson card / toast so its content is readable. */
+  .rail.open { z-index: 13; background: rgba(22, 33, 25, .97); }
+  .rail-toggle { z-index: 14; }
+  /* The toggle sits over the drawer's top-left corner: keep the heading clear of it. */
+  .rail { padding-top: 3rem; }
 }
 
 /* Portrait mobile: status top, square-ish playfield, bottom thumb tray */
@@ -303,15 +308,16 @@ kbd {
   .hud-group.center { order: 3; width: 100%; justify-content: center; }
   .rail-toggle { top: 5.2rem; }
   .toolbox { gap: .3rem; padding: .35rem; flex-wrap: wrap; justify-content: center; }
+  .tutorial-card { bottom: calc(8.6rem + var(--safe-bottom)); }
   .tool { min-width: 48px; min-height: 48px; }
   .tool .nm { display: none; }
-  .rail { top: auto; bottom: 6.6rem; max-height: 42vh; }
+  .rail { top: auto; bottom: 8.4rem; max-height: calc(42vh / var(--ui-scale, 1)); padding-top: .8rem; }
 }
 
 /* Landscape mobile: narrow rails, keep 44px targets */
 @media (max-height: 500px) and (orientation: landscape) {
-  .rail { top: 3rem; bottom: 5rem; width: 14rem; font-size: .85rem; }
-  .toolbox { left: auto; right: calc(.5rem + var(--safe-right)); transform: none; flex-direction: column; max-height: 70vh; }
+  .rail { top: 3rem; bottom: 5rem; width: 14rem; font-size: .85rem; padding-top: 4rem; }
+  .toolbox { left: auto; right: calc(.5rem + var(--safe-right)); transform: none; flex-direction: column; max-height: calc(70vh / var(--ui-scale, 1)); }
   html.left-handed .toolbox { right: auto; left: calc(.5rem + var(--safe-left)); }
   .tool { min-width: 48px; min-height: 44px; }
   .tutorial-card { bottom: auto; top: 3.4rem; }
@@ -332,8 +338,20 @@ kbd {
   .panel, .help-body { max-width: 70ch; }
 }
 
+/* Centred (left:50% + translateX) boxes: shrink-to-fit would only get half the
+   viewport and wrap early (3-column toolbox, narrow lesson card on phones), so
+   size them to content and let max-width clamp. */
+.toolbox, .tutorial-card, .toast { width: max-content; }
+
 /* Reduced motion: kill transitions/animations */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
 html[data-motion="reduced"] * { transition: none !important; animation: none !important; }
+
+/* Large screens: every DOM UI layer zooms by --ui-scale (ui-scale.js; exactly 1
+   up to 1600x1000). The full-viewport Three.js canvas stays unzoomed; vw/vh
+   lengths above are divided by the scale because zoom multiplies them. */
+#screen-title, #screen-picker, .screen.overlay,
+.hud-bar, .rail, .rail-toggle, .toolbox, .tutorial-card,
+.countdown, .toast, .fps-meter, #compat-warning { zoom: var(--ui-scale, 1); }
