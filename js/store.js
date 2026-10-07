@@ -177,7 +177,10 @@ export function importSaveDoc(doc) {
     writeDoc('achievements', { unlocked: {}, ...doc.achievements });
   }
   if (doc.boards && Array.isArray(doc.boards.entries)) writeDoc('boards', { entries: doc.boards.entries });
+  // The cloud doc is the whole mirror: no autosave there means the run ended (or was
+  // abandoned) elsewhere, so drop the stale local one instead of resuming/pushing it.
   if (doc.autosave) saveAutosave(doc.autosave);
+  else clearAutosave();
   return true;
 }
 

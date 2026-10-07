@@ -111,6 +111,9 @@ function makeWindow(hash) {
   assert.equal(doc.progress.journeyUnlocked, 7, 'cloud save round-trip');
   assert.ok(store.importSaveDoc(doc));
   assert.equal(store.loadProgress().journeyUnlocked, 7);
+  store.saveAutosave({ stale: true });
+  assert.ok(store.importSaveDoc(doc));
+  assert.equal(store.loadAutosave(), null, 'cloud doc without autosave clears the stale local one');
 
   // renewal refused → signed out, local play continues
   let signedOut = false;
