@@ -33,7 +33,8 @@ the same public rules API players use.
 - `js/audio.js` — WebAudio procedural sound, four independent buses
 - `js/platform.js` — StarHermit host adapter with offline fallback
 - `js/store.js` — versioned, checksummed local persistence
-- `server.js` — authoritative script: server time, replay-validated scores
+- `score-script.js` — StarHermit platform script: posts finished rounds to the `high-score` board
+- `server.js` — local dev server: server time, replay-validated local scores
 - `starhermit.txt` — distribution manifest
 
 ## Modes

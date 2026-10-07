@@ -208,15 +208,23 @@ export class Platform {
 
   // Score submission goes only to the game's own replay-validated backend
   // (server.js) when reachable; the platform leaderboard itself is read-only.
-  async submitHostedScore(payload) {
-    if (!this.hosted) return { ok: false, reason: 'not-hosted' };
+  // Post a finished round's total to the platform `high-score` board
+  // (score-script.js) via StarHermit.submitScores; resolves {posted, rank} —
+  // the player's rank on that board, or null. Signed out: no request.
+  async postHighScore(total) {
+    if (!this.hosted) return { posted: false, rank: null };
+    const sh = SH();
     try {
-      const body = await SH().api('/api/v1/scores', { method: 'POST', body: payload });
-      return { ok: true, ...(body || {}) };
-    } catch (e) {
-      return { ok: false, reason: (e && e.body && (e.body.reason || e.body.error)) || (e && e.status ? 'http-' + e.status : 'offline') };
-    }
+      const keys = await sh.submitScores({ 'high-score': total });
+      if (!keys || keys.indexOf('high-score') < 0) return { posted: false, rank: null };
+      try {
+        const r = await sh.leaderboard('high-score', { pageSize: 100 });
+        const me = ((r && r.items) || []).find(i => i.userId === sh.userId);
+        return { posted: true, rank: me ? me.rank : null };
+      } catch { return { posted: true, rank: null }; }
+    } catch { return { posted: false, rank: null }; }
   }
+
 }
 
 function cloneControls(c) {

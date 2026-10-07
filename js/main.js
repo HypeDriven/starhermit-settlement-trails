@@ -884,21 +884,11 @@ function handleTerminal(st) {
     const res = store.submitScore(submission);
     state.platform.cloudNotifyChanged();
     if (res.ok && res.rank) rankInfo = `Local board rank: #${res.rank}`;
-    // Hosted submission with replay envelope for validation; casual label if unavailable.
+    // Replay self-check of the finished round (logged when it fails).
     const envelope = state.session.replayEnvelope();
     envelope.materialized = state.session.content;
     const replayCheck = Session.validateReplay(envelope);
     if (!replayCheck.ok) console.warn('replay self-check failed:', replayCheck);
-    if (state.platform.hosted) {
-      state.platform.submitHostedScore({ ...submission, replay: envelope, validated: replayCheck.ok })
-        .then(r => {
-          // Resolves after the results screen rendered: update it in place.
-          if (!r.ok && state.session?.state === st && $('screen-results').classList.contains('active')) {
-            const cmp = $('results-compare');
-            cmp.textContent = (cmp.textContent ? cmp.textContent + ' ' : '') + '(hosted board unavailable — casual)';
-          }
-        });
-    }
   }
   state.ui.showResults({
     won, state: st, score, mode: state.mode,
@@ -906,6 +896,23 @@ function handleTerminal(st) {
     onNextAvailable: nextAvailable,
   });
   state.ui.announce(won ? `Victory! Total score ${score.total}.` : `Charter failed. Score ${score.total}.`);
+  postHighScore(st, score.total);
+}
+
+// Signed in, every finished ranked round (Journey, Daily, Challenge, Score chase —
+// not Practice or Learn) posts its total to the platform high-score board; the
+// results screen shows the rank line.
+function postHighScore(st, total) {
+  const line = $('results-lb');
+  if (!line) return;
+  if (!state.platform.hosted || state.mode === 'practice' || state.mode === 'learn') { line.hidden = true; return; }
+  const L = shStrings(navigator.language);
+  line.hidden = false;
+  line.textContent = L.lbPosting;
+  state.platform.postHighScore(Math.max(0, Math.round(total))).then(r => {
+    if (state.session?.state !== st) return;
+    line.textContent = !r.posted ? L.lbNotPosted : r.rank ? L.lbRank.replace('{rank}', r.rank) : L.lbPosted;
+  });
 }
 
 function unlockAch(id) {
