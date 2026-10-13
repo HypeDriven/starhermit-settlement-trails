@@ -50,7 +50,7 @@ export class AudioEngine {
     const mk = (name) => {
       const g = this.ctx.createGain();
       g.connect(this.ctx.destination);
-      this.buses[name] = g;
+      this.buses[name] = (globalThis.GameOptions ? globalThis.GameOptions.tagBus(g, name) : g);
       return g;
     };
     mk('music'); mk('effects'); mk('ambience'); mk('voice');
@@ -84,7 +84,7 @@ export class AudioEngine {
   }
 
   _osc(type, freq, t0, dur, bus, peak = 0.5, detune = 0) {
-    const o = this.ctx.createOscillator();
+    const o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this.ctx.createOscillator(), bus) : this.ctx.createOscillator());
     o.type = type;
     o.frequency.setValueAtTime(freq, t0);
     o.detune.value = detune;
@@ -100,7 +100,7 @@ export class AudioEngine {
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-    const src = this.ctx.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this.ctx.createBufferSource(), bus) : this.ctx.createBufferSource());
     src.buffer = buf;
     const f = this.ctx.createBiquadFilter();
     f.type = 'bandpass'; f.frequency.value = filterFreq; f.Q.value = q;
@@ -132,7 +132,7 @@ export class AudioEngine {
   }
 
   _playSample(buf) {
-    const src = this.ctx.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this.ctx.createBufferSource(), null) : this.ctx.createBufferSource());
     src.buffer = buf;
     src.connect(this.buses.effects); // effects bus carries mute/volume settings
     src.start();
@@ -213,7 +213,7 @@ export class AudioEngine {
       last = 0.98 * last + 0.02 * (Math.random() * 2 - 1);
       d[i] = last * 2;
     }
-    const src = ctx.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createBufferSource(), null) : ctx.createBufferSource());
     src.buffer = buf; src.loop = true;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass'; f.frequency.value = 400;
@@ -221,7 +221,7 @@ export class AudioEngine {
     src.connect(f); f.connect(g); g.connect(this.buses.ambience);
     src.start();
     // Slow LFO on the filter for a wind-like feel.
-    const lfo = ctx.createOscillator();
+    const lfo = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createOscillator(), null) : ctx.createOscillator());
     lfo.frequency.value = 0.07;
     const lg = ctx.createGain(); lg.gain.value = 150;
     lfo.connect(lg); lg.connect(f.frequency);
@@ -249,7 +249,7 @@ export class AudioEngine {
       const chord = chords[chordIdx % chords.length];
       chordIdx++;
       for (const f of chord) {
-        const o = ctx.createOscillator();
+        const o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createOscillator(), null) : ctx.createOscillator());
         o.type = 'sine'; o.frequency.value = f * (1 + (this.rng.float() - 0.5) * 0.004);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0, t);
@@ -267,7 +267,7 @@ export class AudioEngine {
       const chord = chords[(chordIdx - 1 + chords.length) % chords.length];
       const f = chord[this.musicNodes.step % chord.length] * 2;
       this.musicNodes.step++;
-      const o = ctx.createOscillator();
+      const o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createOscillator(), null) : ctx.createOscillator());
       o.type = 'triangle'; o.frequency.value = f;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0, t);
