@@ -1,6 +1,6 @@
 // sh-strings.js — localized strings for the StarHermit account controls
-// (sign-in, invite link, sign-out notice). Follows navigator.language like
-// the Graphics panel.
+// (sign-in, invite link, sign-out notice). Callers pass the game language
+// (i18n.js getLang()), like the Graphics panel.
 import { gfxLocale } from './gfx-strings.js';
 
 const EN = {

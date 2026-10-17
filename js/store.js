@@ -167,7 +167,79 @@ export function exportSaveDoc() {
   };
 }
 
-// Remote wins on conflict (platform contract). Returns false when unusable.
+const n0 = (v) => (Number.isFinite(v) ? v : 0);
+const boardKey = (e) => `${e.board}|${e.sessionId}|${e.score}|${e.when}`;
+
+/**
+ * Merge two save docs (this device's `local`, the cloud's `remote`) so neither
+ * side's progress is lost: the furthest journey unlock, best stars per stage,
+ * every win, the larger totals, the best daily score per date and the later
+ * streak, every achievement (earliest unlock), the union of both local boards,
+ * every finished lesson. Preferences and the in-progress autosave are this
+ * device's (the cloud's autosave only when this device has none).
+ */
+export function mergeSaveDocs(local, remote) {
+  const lp = { ...structuredClone(DEFAULT_PROGRESS), ...(local.progress || {}) };
+  const rp = { ...structuredClone(DEFAULT_PROGRESS), ...(remote.progress || {}) };
+  const stars = { ...(rp.journeyStars || {}) };
+  for (const [id, n] of Object.entries(lp.journeyStars || {})) stars[id] = Math.max(n0(stars[id]), n0(n));
+  const totals = {};
+  for (const k of new Set([...Object.keys(rp.totals || {}), ...Object.keys(lp.totals || {})])) totals[k] = Math.max(n0(rp.totals?.[k]), n0(lp.totals?.[k]));
+  const best = { ...(rp.daily?.best || {}) };
+  for (const [d, v] of Object.entries(lp.daily?.best || {})) best[d] = Math.max(n0(best[d]), n0(v));
+  const la = lp.daily?.lastPlayed || '', ra = rp.daily?.lastPlayed || '';
+  const daily = {
+    lastPlayed: (la > ra ? la : ra) || null,
+    streak: la === ra ? Math.max(n0(lp.daily?.streak), n0(rp.daily?.streak)) : n0((la > ra ? lp : rp).daily?.streak),
+    best,
+  };
+  const progress = {
+    ...rp, ...lp,
+    journeyUnlocked: Math.max(n0(lp.journeyUnlocked), n0(rp.journeyUnlocked)),
+    journeyStars: stars,
+    journeyWon: { ...(rp.journeyWon || {}), ...(lp.journeyWon || {}) },
+    totals, daily,
+  };
+  const unlocked = { ...(remote.achievements?.unlocked || {}) };
+  for (const [id, at] of Object.entries(local.achievements?.unlocked || {})) unlocked[id] = unlocked[id] ? Math.min(unlocked[id], at) : at;
+  const seen = new Set();
+  const entries = [...(local.boards?.entries || []), ...(remote.boards?.entries || [])]
+    .filter((e) => { const k = boardKey(e); if (seen.has(k)) return false; seen.add(k); return true; });
+  const settings = { ...DEFAULT_SETTINGS, ...(remote.settings || {}), ...(local.settings || {}) };
+  settings.tutorialsDone = [...new Set([...(remote.settings?.tutorialsDone || []), ...(local.settings?.tutorialsDone || [])])];
+  return {
+    kind: 'settlement-trails-save', version: STORE_VERSION, exportedAt: Date.now(),
+    settings, progress, achievements: { unlocked }, boards: { entries },
+    autosave: local.autosave || remote.autosave || null,
+  };
+}
+
+/**
+ * Merge a cloud doc into the local docs (mergeSaveDocs) and write the result.
+ * Returns false when the doc is unusable, otherwise true.
+ */
+export function mergeSaveDoc(doc) {
+  if (!doc || typeof doc !== 'object') return false;
+  if (doc.kind !== 'settlement-trails-save' || doc.version !== STORE_VERSION) return false;
+  const merged = mergeSaveDocs(exportSaveDoc(), doc);
+  saveSettings(merged.settings);
+  saveProgress(merged.progress);
+  writeDoc('achievements', merged.achievements);
+  // Same top-200-per-board ordering as submitScore.
+  const byBoard = {};
+  for (const e of merged.boards.entries) (byBoard[e.board] = byBoard[e.board] || []).push(e);
+  const entries = [];
+  for (const b in byBoard) {
+    byBoard[b].sort((x, y) => y.score - x.score || (y.won ? 1 : 0) - (x.won ? 1 : 0) ||
+      x.invalidActions - y.invalidActions || x.elapsedTicks - y.elapsedTicks || String(x.sessionId).localeCompare(String(y.sessionId)));
+    entries.push(...byBoard[b].slice(0, 200));
+  }
+  writeDoc('boards', { entries });
+  if (merged.autosave) saveAutosave(merged.autosave);
+  return true;
+}
+
+// Replaces the local docs with a cloud doc (kept for tools/tests). Returns false when unusable.
 export function importSaveDoc(doc) {
   if (!doc || typeof doc !== 'object') return false;
   if (doc.kind !== 'settlement-trails-save' || doc.version !== STORE_VERSION) return false;

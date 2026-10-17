@@ -1,5 +1,5 @@
 // gfx-strings.js — localized strings for the Graphics settings section.
-// The rest of the game is English-only; this panel follows navigator.language.
+// The panel follows the game language (callers pass i18n.js getLang()).
 
 const EN = {
   heading: 'Graphics',

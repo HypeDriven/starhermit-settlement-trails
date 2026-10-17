@@ -4,7 +4,8 @@
 // per-player settings KV and keyboard bindings. Standalone (no token) it makes
 // no network calls. Launch tokens are never persisted to storage.
 
-import { exportSaveDoc, importSaveDoc, loadSettings, saveSettings } from './store.js';
+import { exportSaveDoc, mergeSaveDoc, loadSettings, saveSettings } from './store.js';
+import { T } from './i18n.js';
 
 const SH = () => globalThis.StarHermit || null;
 
@@ -39,6 +40,7 @@ export class Platform {
     this.syncStatus = null;     // null (standalone) | saving | synced | offline | error
     this.onSyncStatus = null;   // main.js refreshes the title line on change
     this.onAuthChange = null;   // main.js re-shows the sign-in button on sign-out
+    this.onCloudMerged = null;  // main.js reloads progress after a save conflict was merged
     this.controls = cloneControls(DEFAULT_CONTROLS);
   }
 
@@ -48,6 +50,7 @@ export class Platform {
       if (!sh.token) sh.init();
       sh.on('auth', (a) => this._onAuth(a));
       sh.on('saved', (ok) => this._setSyncStatus(ok ? 'synced' : 'error'));
+      sh.on('saveconflict', () => this._resolveConflict());
       this._syncFromSdk();
     }
     if (this.hosted) {
@@ -118,7 +121,7 @@ export class Platform {
 
   async profileName(userId) {
     const p = await SH().profile(userId).catch(() => null);
-    return p ? p.displayName : 'Player ' + String(userId).slice(0, 6);
+    return p ? p.displayName : T('Player {id}', { id: String(userId).slice(0, 6) });
   }
 
   // ---- per-player settings KV -------------------------------------------------
@@ -143,7 +146,10 @@ export class Platform {
 
   // ---- cloud save: one platform slot mirroring the local docs -----------------
   // localStorage stays the offline cache and the standalone source of truth;
-  // when hosted, the remote doc wins on load and local changes mirror up.
+  // when hosted, the cloud doc is merged into the local docs on load (store
+  // mergeSaveDocs: nothing is dropped) and local changes mirror up. Writes after
+  // a load are conditional (SDK ETag): a write that loses to another device
+  // emits 'saveconflict' → reload, merge, save again.
 
   _setSyncStatus(s) {
     if (this.syncStatus === s) return;
@@ -152,14 +158,36 @@ export class Platform {
   }
 
   syncLabel() {
-    return ({ saving: 'Saving…', synced: 'Cloud synced', offline: 'Offline', error: 'Sync issue' })[this.syncStatus] || '';
+    const labels = { saving: 'Saving…', synced: 'Cloud synced', offline: 'Offline', error: 'Sync issue' };
+    return labels[this.syncStatus] ? T(labels[this.syncStatus]) : '';
   }
 
   async _cloudLoad() {
     this._setSyncStatus('saving');
     try {
       const doc = await SH().loadJSON();
-      this._setSyncStatus(!doc || importSaveDoc(doc) ? 'synced' : 'error');
+      const ok = !doc || mergeSaveDoc(doc);
+      this._setSyncStatus(ok ? 'synced' : 'error');
+      // Local progress the cloud lacks goes back up.
+      if (ok && this._differs(doc)) this.cloudNotifyChanged();
+    } catch { this._setSyncStatus('offline'); }
+  }
+
+  _differs(doc) {
+    if (!doc) return Object.keys(exportSaveDoc().progress.journeyStars || {}).length > 0;
+    const local = exportSaveDoc();
+    const pick = (d) => JSON.stringify([d.progress, d.achievements, (d.boards?.entries || []).length, d.settings?.tutorialsDone]);
+    return pick(local) !== pick(doc);
+  }
+
+  async _resolveConflict() {
+    if (!this.hosted) return;
+    this._setSyncStatus('saving');
+    try {
+      const doc = await SH().loadJSON();
+      if (doc) mergeSaveDoc(doc);
+      try { if (this.onCloudMerged) this.onCloudMerged(); } catch { /* UI hook */ }
+      if (!SH().saveConflicted()) this.cloudNotifyChanged();
     } catch { this._setSyncStatus('offline'); }
   }
 
@@ -195,7 +223,7 @@ export class Platform {
       for (const e of (r.items || []).slice(0, pageSize)) {
         const userId = e.userId ?? null;
         entries.push({
-          name: userId ? await this.profileName(userId) : (e.username || 'Player'),
+          name: userId ? await this.profileName(userId) : (e.username || T('Player')),
           score: Number(e.score ?? 0),
           rank: e.rank,
         });

@@ -29,7 +29,7 @@ function res(status, body) {
 
 function fakeServer() {
   const calls = [];
-  let save = null;
+  let save = null, etag = null, version = 0;
   const settings = { music: 0.1, textSize: 'large' };
   const fetch = async (url, init = {}) => {
     const method = init.method || 'GET';
@@ -37,8 +37,16 @@ function fakeServer() {
     assert.equal(init.headers.Authorization, 'Bearer ' + tokenNow);
     const path = url.split('?')[0];
     if (path === `/api/v1/users/${USER}/profile`) return res(200, { nickname: 'Trailblazer' });
+    if (path === `/api/v1/me/cloud-saves/${encodeURIComponent('game:' + SLUG)}/info`) return res(200, save ? { exists: true, etag } : { exists: false });
     if (path === `/api/v1/me/cloud-saves/${encodeURIComponent('game:' + SLUG)}`) {
-      if (method === 'PUT') { save = Buffer.from(JSON.parse(init.body).dataBase64, 'base64'); return res(204); }
+      if (method === 'PUT') {
+        // Conditional writes (SDK ETag): a write based on an older version loses with 412.
+        const h = init.headers || {};
+        if ((h['If-Match'] && h['If-Match'] !== etag) || (h['If-None-Match'] === '*' && save)) return res(412, { etag });
+        save = Buffer.from(JSON.parse(init.body).dataBase64, 'base64');
+        etag = `"v${++version}"`;
+        return res(200, { etag });
+      }
       return save ? res(200, new Uint8Array(save)) : res(404);
     }
     if (path === `/api/v1/games/${SLUG}/settings`) {
@@ -115,6 +123,31 @@ function makeWindow(hash) {
   assert.ok(store.importSaveDoc(doc));
   assert.equal(store.loadAutosave(), null, 'cloud doc without autosave clears the stale local one');
 
+  // save conflict: another device saved first → reload, merge, save again (nothing dropped)
+  const otherWin = makeWindow('#game_token=' + tokenNow);
+  const other = SDK.create({ window: otherWin, fetch: srv.fetch, setTimeout: (f) => 0, clearTimeout() {} });
+  other.init();
+  const theirs = await other.loadJSON();
+  theirs.progress.journeyUnlocked = 3;
+  theirs.progress.journeyStars = { 'journey-12': 3 };
+  theirs.achievements = { unlocked: { first_charter: 5 } };
+  other.saveJSON(theirs, 0);
+  await other.flushSave(true);
+  let merged = 0;
+  p.onCloudMerged = () => { merged++; };
+  const mine = store.loadProgress();
+  mine.journeyUnlocked = 9;
+  store.saveProgress(mine);
+  p.cloudNotifyChanged();
+  await globalThis.StarHermit.flushSave(true);
+  for (let i = 0; i < 50 && !merged; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(merged, 1, 'conflict merged');
+  await globalThis.StarHermit.flushSave(true);
+  const final = await other.loadJSON();
+  assert.equal(final.progress.journeyUnlocked, 9, 'furthest unlock kept');
+  assert.equal(final.progress.journeyStars['journey-12'], 3, 'other device stars kept');
+  assert.ok(final.achievements.unlocked.first_charter, 'other device achievement kept');
+
   // renewal refused → signed out, local play continues
   let signedOut = false;
   p.onAuthChange = () => { signedOut = true; };
@@ -141,6 +174,19 @@ function makeWindow(hash) {
   assert.equal(p.canSignIn(), false, 'no sign-in button when running locally');
   assert.deepEqual(p.controls.undo, ['KeyU']);
   assert.equal(calls.length, 0, 'no fetch standalone');
+}
+
+// ---- standalone on the game's UUID host: sign-in offered, still no network --------
+{
+  const calls = [];
+  const win = makeWindow('');
+  win.location.hostname = '0b9d6f2e-3c4a-4e5b-9a7c-1d2e3f405162.starhermit.com';
+  globalThis.window = win;
+  globalThis.StarHermit = SDK.create({ window: win, fetch: async (u) => { calls.push(u); return res(500); } });
+  const { Platform } = await import('../js/platform.js?uuid-host');
+  const p = await new Platform().init();
+  assert.equal(p.canSignIn(), true, 'sign-in offered on the UUID host');
+  assert.equal(calls.length, 0);
 }
 
 console.log('starhermit tests passed');

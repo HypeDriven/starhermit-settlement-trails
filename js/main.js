@@ -11,6 +11,8 @@ import { UI, PORTRAIT_DRAWERS } from './ui.js';
 import { PRESETS, CATEGORIES, choosePreset, presetTier, resolve } from './gfx.js';
 import { gfxStrings } from './gfx-strings.js';
 import { shStrings } from './sh-strings.js';
+import { T, N, getLang, onLanguage, initLanguage } from './i18n.js';
+import { contentName, contentBlurb, buildingName, invalidText, eventText, practiceLevel } from './names.js';
 
 const state = {
   platform: null,
@@ -39,6 +41,9 @@ const $ = (id) => document.getElementById(id);
 
 // ---- boot ------------------------------------------------------------------------
 async function boot() {
+  // Game language first (sh-language.js: Language setting → account preference → browser).
+  initLanguage();
+  onLanguage(refreshLanguage);
   state.platform = await new Platform().init();
   state.settings = store.loadSettings();
   state.progress = store.loadProgress();
@@ -48,6 +53,12 @@ async function boot() {
   state.ui = new UI();
   state.ui.bind(uiHandlers());
   state.platform.onSyncStatus = () => refreshTitle();
+  // Another device saved first: the platform merged the cloud copy into the local docs.
+  state.platform.onCloudMerged = () => {
+    state.progress = store.loadProgress();
+    state.settings.tutorialsDone = store.loadSettings().tutorialsDone;
+    refreshTitle();
+  };
   wireAccount();
 
   // WebGL capability detection with graceful fallback message.
@@ -71,7 +82,7 @@ async function boot() {
 function refreshTitle() {
   const today = state.platform.utcToday();
   state.ui.setTitleInfo({
-    profileName: state.platform.profile?.name || 'Guest',
+    profileName: profileName(),
     sync: state.platform.hosted ? state.platform.syncLabel() : '',
     dailyDone: !!(state.progress.daily.best[today]),
     journeyUnlocked: Math.min(state.progress.journeyUnlocked, C.JOURNEY_STAGES.length),
@@ -81,19 +92,30 @@ function refreshTitle() {
   refreshAccount();
 }
 
+/** Display name: the account nickname, or the translated guest name. */
+function profileName() {
+  const p = state.platform.profile;
+  return !p || p.guest ? T('Guest') : p.name;
+}
+
 // ---- StarHermit account controls ----------------------------------------------------
-function wireAccount() {
-  const L = shStrings(navigator.language);
+function labelAccount() {
+  const L = shStrings(getLang());
   $('btn-signin').textContent = L.signIn;
   $('btn-invite').textContent = L.invite;
+}
+
+function wireAccount() {
+  labelAccount();
   $('btn-signin').addEventListener('click', () => state.platform.signIn());
   $('btn-invite').addEventListener('click', async () => {
     const link = state.platform.inviteLink();
     if (!link) return;
+    const L = shStrings(getLang());
     try { await navigator.clipboard.writeText(link); state.ui.toast(L.copied); }
     catch { state.ui.toast(L.copyFailed + ': ' + link, true); }
   });
-  state.platform.onAuthChange = () => { state.ui.toast(L.signedOut); refreshTitle(); };
+  state.platform.onAuthChange = () => { state.ui.toast(shStrings(getLang()).signedOut); refreshTitle(); };
 }
 
 function refreshAccount() {
@@ -145,36 +167,37 @@ function buildSettings(body) {
     return ui.settingsRow(label, sel);
   };
 
+  const heading = (text) => { const h = document.createElement('h3'); h.textContent = text; return h; };
   const g1 = document.createElement('div'); g1.className = 'set-group';
-  g1.innerHTML = '<h3>Audio</h3>';
+  g1.append(heading(T('Audio')));
   g1.append(
-    slider('set-music', 'Music', 'music'),
-    slider('set-fx', 'Effects', 'effects'),
-    slider('set-amb', 'Ambience', 'ambience'),
-    slider('set-voice', 'Voice', 'voice'),
-    toggle('set-mute', 'Mute all audio', 'muteAll'),
+    slider('set-music', T('Music'), 'music'),
+    slider('set-fx', T('Effects'), 'effects'),
+    slider('set-amb', T('Ambience'), 'ambience'),
+    slider('set-voice', T('Voice'), 'voice'),
+    toggle('set-mute', T('Mute all audio'), 'muteAll'),
   );
   const gfx = document.createElement('div'); gfx.className = 'set-group'; gfx.id = 'gfx-section';
   buildGraphicsSection(gfx, save);
   const g2 = document.createElement('div'); g2.className = 'set-group';
-  g2.innerHTML = '<h3>Display &amp; motion</h3>';
+  g2.append(heading(T('Display & motion')));
   g2.append(
-    toggle('set-motion', 'Reduced motion', 'reducedMotion'),
-    toggle('set-contrast', 'High contrast', 'highContrast'),
-    select('set-palette', 'Color palette', 'colorPalette', [['default', 'Default'], ['deuteranopia', 'Deuteranopia-safe'], ['protanopia', 'Protanopia-safe'], ['tritanopia', 'Tritanopia-safe']]),
-    toggle('set-shake', 'Camera shake', 'cameraShake'),
+    toggle('set-motion', T('Reduced motion'), 'reducedMotion'),
+    toggle('set-contrast', T('High contrast'), 'highContrast'),
+    select('set-palette', T('Color palette'), 'colorPalette', [['default', T('Default')], ['deuteranopia', T('Deuteranopia-safe')], ['protanopia', T('Protanopia-safe')], ['tritanopia', T('Tritanopia-safe')]]),
+    toggle('set-shake', T('Camera shake'), 'cameraShake'),
   );
   const g3 = document.createElement('div'); g3.className = 'set-group';
-  g3.innerHTML = '<h3>Accessibility & controls</h3>';
+  g3.append(heading(T('Accessibility & controls')));
   g3.append(
-    select('set-text', 'Text size', 'textSize', [['normal', 'Normal'], ['large', 'Large']]),
-    select('set-daylen', 'Day length (timing assistance)', 'dayLength', [['normal', 'Normal'], ['relaxed', 'Relaxed (slower days)']]),
-    toggle('set-left', 'Left-handed layout', 'leftHanded'),
-    toggle('set-haptics', 'Haptics', 'haptics'),
+    select('set-text', T('Text size'), 'textSize', [['normal', T('Normal')], ['large', T('Large')]]),
+    select('set-daylen', T('Day length (timing assistance)'), 'dayLength', [['normal', T('Normal')], ['relaxed', T('Relaxed (slower days)')]]),
+    toggle('set-left', T('Left-handed layout'), 'leftHanded'),
+    toggle('set-haptics', T('Haptics'), 'haptics'),
   );
   const replayBtn = document.createElement('button');
   replayBtn.className = 'btn';
-  replayBtn.textContent = 'Replay tutorials';
+  replayBtn.textContent = T('Replay tutorials');
   replayBtn.addEventListener('click', () => {
     state.settings.tutorialsDone = [];
     save();
@@ -188,7 +211,7 @@ function buildSettings(body) {
 
 // ---- Graphics section (quality presets, render scale, per-effect overrides) ----------
 function buildGraphicsSection(root, save) {
-  const L = gfxStrings(navigator.language);
+  const L = gfxStrings(getLang());
   const ui = state.ui;
   const view = state.view;
   const detected = view ? view.detected : 'balanced';
@@ -291,7 +314,7 @@ function refreshGraphicsSummary() {
   const el = $('gfx-summary');
   if (!el) return;
   const info = state.view?.graphicsInfo();
-  if (!info) { el.textContent = 'WebGL unavailable'; return; }
+  if (!info) { el.textContent = T('WebGL unavailable'); return; }
   el.textContent = [info.gpu, info.summary].filter(Boolean).join(' · ');
   el.dataset.preset = info.resolved.preset;
   const note = $('gfx-note');
@@ -336,7 +359,7 @@ function uiHandlers() {
     onUndo: () => {
       if (!state.session) return;
       const r = state.session.undo();
-      if (r.ok) { syncAll(); state.audio.play('ui'); } else state.ui.toast('Nothing to undo.', true);
+      if (r.ok) { syncAll(); state.audio.play('ui'); } else state.ui.toast(T('Nothing to undo.'), true);
     },
     hasUndo: () => !!state.session && state.session.allowUndo && state.session.undoStack.length > 0,
     onHint: () => showHint(),
@@ -353,59 +376,73 @@ function uiHandlers() {
   };
 }
 
-function showJourneyPicker() {
-  state.ui.showPicker('Journey', state.ui.stageGrid(C.JOURNEY_STAGES, state.progress, (i) => {
+// Pickers remember how to rebuild themselves so a language change can redraw the open one in place.
+function showJourneyPicker(rebuild = false) {
+  state.picker = showJourneyPicker;
+  state.ui.showPicker(T('Journey'), state.ui.stageGrid(C.JOURNEY_STAGES, state.progress, (i) => {
     startGame(C.JOURNEY_STAGES[i], 'journey');
-  }));
+  }), rebuild);
 }
 
-function showLearnPicker() {
-  state.ui.showPicker('Learn', (body) => {
+function showLearnPicker(rebuild = false) {
+  state.picker = showLearnPicker;
+  state.ui.showPicker(T('Learn'), (body) => {
     for (const t of C.TUTORIALS) {
       const done = state.settings.tutorialsDone.includes(t.id);
       const card = document.createElement('button');
       card.className = 'stage-card';
-      card.innerHTML = `<div>${done ? '✅' : '▶️'} ${t.name}</div><div class="muted">${t.steps.length} steps</div>`;
+      const title = document.createElement('div');
+      title.textContent = `${done ? '✅' : '▶️'} ${contentName(t)}`;
+      const sub = document.createElement('div');
+      sub.className = 'muted';
+      sub.textContent = T('{n} steps', { n: t.steps.length });
+      card.append(title, sub);
       card.addEventListener('click', () => startGame(t, 'learn'));
       body.appendChild(card);
     }
-  });
+  }, rebuild);
 }
 
-function showPracticePicker() {
-  state.ui.showPicker('Practice', (body) => {
+function showPracticePicker(rebuild = false) {
+  state.picker = showPracticePicker;
+  state.ui.showPicker(T('Practice'), (body) => {
     for (const d of ['relaxed', 'normal', 'hard']) {
       const def = C.practiceContent(d, 0xC0FFEE);
       const card = document.createElement('div');
       card.className = 'setup-card';
-      card.innerHTML = `<h3>${d[0].toUpperCase() + d.slice(1)}</h3>
-        <p>Population ${def.goals.population} in ${def.goals.days} days. Unranked, undo enabled.</p>`;
+      const h = document.createElement('h3');
+      h.textContent = practiceLevel(d);
+      const p = document.createElement('p');
+      p.textContent = T('Population {pop} in {days} days. Unranked, undo enabled.', { pop: def.goals.population, days: def.goals.days });
+      card.append(h, p);
       const b = document.createElement('button');
-      b.className = 'btn primary'; b.textContent = 'Start';
+      b.className = 'btn primary'; b.textContent = T('Start');
       b.addEventListener('click', () => startGame(C.practiceContent(d), 'practice'));
       card.appendChild(b);
       body.appendChild(card);
     }
-  });
+  }, rebuild);
 }
 
-function showChallengePicker() {
-  state.ui.showPicker('Challenges', (body) => {
+function showChallengePicker(rebuild = false) {
+  state.picker = showChallengePicker;
+  state.ui.showPicker(T('Challenges'), (body) => {
     for (const ch of C.CHALLENGES) {
       const b = state.ui.setupCard(ch, { ranked: false, expected: '5–8', onStart: () => startGame(ch, 'challenge') });
       b(body);
     }
-  });
+  }, rebuild);
 }
 
-function showDailySetup() {
+function showDailySetup(rebuild = false) {
+  state.picker = showDailySetup;
   const today = state.platform.utcToday();
   const def = C.dailyContent(today);
-  state.ui.showPicker('Daily Trail', state.ui.setupCard(def, {
+  state.ui.showPicker(T('Daily Trail'), state.ui.setupCard(def, {
     ranked: true,
     expected: '5–10',
     onStart: () => startGame(def, 'daily'),
-  }));
+  }), rebuild);
 }
 
 // ---- game lifecycle ----------------------------------------------------------------------
@@ -438,7 +475,7 @@ function startGame(def, mode) {
   state.ui.buildToolbox(content.mechanics, true);
   state.ui.setTool('inspect');
   state.ui.setModePill(modeLabel(mode));
-  state.ui.setObjectiveText(def.blurb || content.name);
+  state.ui.setObjectiveText(def.blurb ? contentBlurb(def) : contentName(content));
   updateTutorialCard();
   syncAll();
   $('rail-left').classList.toggle('open', window.innerWidth >= 1024);
@@ -470,11 +507,12 @@ function startGame(def, mode) {
     };
     setTimeout(tick, 700);
   }
-  state.ui.announce(`${content.name}. ${def.blurb || ''}`);
+  state.ui.announce(`${contentName(content)}. ${contentBlurb(def)}`);
 }
 
 function modeLabel(mode) {
-  return { journey: 'Journey', learn: 'Lesson', daily: 'Daily', practice: 'Practice', challenge: 'Challenge' }[mode] || mode;
+  const labels = { journey: N('Journey'), learn: N('Lesson'), daily: N('Daily'), practice: N('Practice'), challenge: N('Challenge') };
+  return labels[mode] ? T(labels[mode]) : mode;
 }
 
 function pauseGame() {
@@ -526,17 +564,17 @@ function resumeAutosave() {
     requestAnimationFrame(() => { state.view?.resize(); state.view?.resetCamera(); });
     state.ui.buildToolbox(content.mechanics, true);
     state.ui.setModePill(modeLabel(state.mode));
-    state.ui.setObjectiveText(content.blurb || content.name);
+    state.ui.setObjectiveText(content.blurb ? contentBlurb(content) : contentName(content));
     // Restored sessions always resume paused (Session.restore) — reflect that.
     state.ui.setSpeedButton(state.session.speed, true);
     syncAll();
     // "While you were away" summary: simulation was paused; nothing advanced.
-    state.ui.toast('Welcome back — your settlement is exactly as you left it.');
+    state.ui.toast(T('Welcome back — your settlement is exactly as you left it.'));
   } catch (e) {
     console.error('autosave restore failed', e);
     store.clearAutosave();
     state.platform.cloudNotifyChanged();
-    state.ui.toast('Saved game could not be loaded (version mismatch).', true);
+    state.ui.toast(T('Saved game could not be loaded (version mismatch).'), true);
   }
 }
 
@@ -568,7 +606,7 @@ function onTileTap(x, y) {
   if (state.tool === 'demolish') {
     const err = R.demolishError(st, x, y);
     if (err) {
-      state.ui.toast(R.INVALID_REASONS[err], true);
+      state.ui.toast(invalidText(err), true);
       state.audio.play('invalid');
       return;
     }
@@ -579,9 +617,9 @@ function onTileTap(x, y) {
   // placement
   const err = R.placementError(st, x, y, state.tool);
   if (err) {
-    state.ui.toast(R.INVALID_REASONS[err] || 'Cannot build here.', true);
+    state.ui.toast(R.INVALID_REASONS[err] ? invalidText(err) : T('Cannot build here.'), true);
     state.audio.play('invalid');
-    state.ui.alert(`Cannot build: ${R.INVALID_REASONS[err]}`);
+    state.ui.alert(T('Cannot build: {reason}', { reason: invalidText(err) }));
     inspectTile(x, y, { error: err });
     return;
   }
@@ -783,9 +821,9 @@ function completeTutorial() {
 function handleEvents(events, st) {
   for (const ev of events) {
     state.audio.playEvent(ev);
-    if (ev.kind === 'invalid') state.ui.toast(ev.text, true);
-    if (ev.kind === 'shortage') state.ui.alert(ev.text);
-    if (ev.kind === 'order') state.ui.toast(ev.text);
+    if (ev.kind === 'invalid') state.ui.toast(eventText(ev), true);
+    if (ev.kind === 'shortage') state.ui.alert(eventText(ev));
+    if (ev.kind === 'order') state.ui.toast(eventText(ev));
     if (ev.kind === 'won' || ev.kind === 'lost') state.audio.play(ev.kind === 'won' ? 'win' : 'lose');
     // Haptics mirror the audible event feedback (settings toggle).
     if (state.settings.haptics && typeof navigator.vibrate === 'function') {
@@ -807,7 +845,7 @@ function syncAll() {
   state.ui.updateOrders(st, (orderId) => {
     const r = state.session.submit({ type: 'fulfill', orderId });
     if (r.ok) afterPlayerAction('fulfill');
-    else state.ui.toast(R.INVALID_REASONS[r.reason] || 'Cannot fulfil.', true);
+    else state.ui.toast(R.INVALID_REASONS[r.reason] ? invalidText(r.reason) : T('Cannot fulfil.'), true);
   });
   state.ui.updateEventLog(st.events);
   if (state.view) {
@@ -883,7 +921,7 @@ function handleTerminal(st) {
     };
     const res = store.submitScore(submission);
     state.platform.cloudNotifyChanged();
-    if (res.ok && res.rank) rankInfo = `Local board rank: #${res.rank}`;
+    if (res.ok && res.rank) { const rank = res.rank; rankInfo = () => T('Local board rank: #{rank}', { rank }); }
     // Replay self-check of the finished round (logged when it fails).
     const envelope = state.session.replayEnvelope();
     envelope.materialized = state.session.content;
@@ -895,7 +933,7 @@ function handleTerminal(st) {
     rankInfo, newAchievements: newAch,
     onNextAvailable: nextAvailable,
   });
-  state.ui.announce(won ? `Victory! Total score ${score.total}.` : `Charter failed. Score ${score.total}.`);
+  state.ui.announce(won ? T('Victory! Total score {score}.', { score: score.total }) : T('Charter failed. Score {score}.', { score: score.total }));
   postHighScore(st, score.total);
 }
 
@@ -905,20 +943,28 @@ function handleTerminal(st) {
 function postHighScore(st, total) {
   const line = $('results-lb');
   if (!line) return;
-  if (!state.platform.hosted || state.mode === 'practice' || state.mode === 'learn') { line.hidden = true; return; }
-  const L = shStrings(navigator.language);
+  if (!state.platform.hosted || state.mode === 'practice' || state.mode === 'learn') { line.hidden = true; state.lb = null; return; }
   line.hidden = false;
-  line.textContent = L.lbPosting;
+  state.lb = { state: 'posting' };
+  line.textContent = lbText(state.lb);
   state.platform.postHighScore(Math.max(0, Math.round(total))).then(r => {
     if (state.session?.state !== st) return;
-    line.textContent = !r.posted ? L.lbNotPosted : r.rank ? L.lbRank.replace('{rank}', r.rank) : L.lbPosted;
+    state.lb = !r.posted ? { state: 'failed' } : { state: 'posted', rank: r.rank || null };
+    line.textContent = lbText(state.lb);
   });
+}
+
+function lbText(lb) {
+  const L = shStrings(getLang());
+  if (lb.state === 'posting') return L.lbPosting;
+  if (lb.state === 'failed') return L.lbNotPosted;
+  return lb.rank ? L.lbRank.replace('{rank}', lb.rank) : L.lbPosted;
 }
 
 function unlockAch(id) {
   if (store.unlockAchievement(id)) {
     const a = store.ACHIEVEMENTS.find(x => x.id === id);
-    if (a) state.ui.toast(`🏅 Achievement: ${a.name}`);
+    if (a) state.ui.toast(T('🏅 Achievement: {name}', { name: T(a.name) }));
     state.audio.play('achievement');
     state.platform.cloudNotifyChanged();
   }
@@ -928,39 +974,61 @@ function unlockAch(id) {
 function showHint() {
   if (!state.session || state.session.finished) return;
   const hint = R.suggestAction(state.session.state);
-  if (!hint) { state.ui.toast('Nothing useful to do — wait for the next day.'); return; }
+  if (!hint) { state.ui.toast(T('Nothing useful to do — wait for the next day.')); return; }
   state.audio.play('hint');
   if (hint.kind === 'place') {
-    const def = R.BUILDINGS[hint.type || hint.building];
-    state.ui.toast(`💡 Try a ${def.name} at (${hint.x}, ${hint.y}).`);
+    state.ui.toast(T('💡 Try a {building} at ({x}, {y}).', { building: buildingName(hint.type || hint.building), x: hint.x, y: hint.y }));
     if (state.view) {
       state.view.setCursor(hint.x, hint.y);
       state.cursor = { x: hint.x, y: hint.y };
     }
   } else if (hint.kind === 'fulfill') {
-    state.ui.toast('💡 You can fulfil a trade order from the orders panel.');
+    state.ui.toast(T('💡 You can fulfil a trade order from the orders panel.'));
   }
 }
 
 // ---- scoreboards --------------------------------------------------------------------------------------
 async function renderBoard(boardTab) {
-  let board = 'global', note = 'All local scores.';
-  if (boardTab === 'daily') { board = 'daily-' + state.platform.utcToday(); note = 'Today’s shared seed.'; }
+  state.boardTab = boardTab;
+  let board = 'global', note = T('All local scores.');
+  if (boardTab === 'daily') { board = 'daily-' + state.platform.utcToday(); note = T('Today’s shared seed.'); }
   if (boardTab === 'friends') {
     const friends = state.platform.friends.length ? state.platform.friends : [state.platform.profile?.name || 'Guest'];
     const entries = store.getBoard('global', { friendsOnly: true, friends });
-    state.ui.renderScores(entries, state.platform.profile?.name, state.platform.friends.length ? 'Friends only.' : 'No friends yet — showing your own scores.');
+    state.ui.renderScores(entries, state.platform.profile?.name, T(state.platform.friends.length ? 'Friends only.' : 'No friends yet — showing your own scores.'));
     return;
   }
   if (boardTab === 'global' && state.platform.hosted) {
     // The platform leaderboard is read-only; local records stay the fallback.
     const r = await state.platform.leaderboardEntries({ pageSize: 50 });
     if (r.ok) {
-      state.ui.renderScores(r.entries, state.platform.profile?.name, 'Platform leaderboard — read only. Local scores keep your full history.');
+      state.ui.renderScores(r.entries, state.platform.profile?.name, T('Platform leaderboard — read only. Local scores keep your full history.'));
       return;
     }
   }
   state.ui.renderScores(store.getBoard(board), state.platform.profile?.name, note);
+}
+
+// ---- language -------------------------------------------------------------------------------------------
+// A language change re-renders every text built in code, in place: title, the open
+// picker, HUD/toolbox/orders/log/inspector, results, scoreboard, settings and help.
+function refreshLanguage() {
+  if (!state.ui || !state.platform) return;
+  labelAccount();
+  refreshTitle();
+  state.ui.relabel();
+  if ($('screen-picker').classList.contains('active') && state.picker) state.picker(true);
+  const st = state.session?.state;
+  if (st) {
+    state.ui.setModePill(modeLabel(state.mode));
+    const def = state.def || state.session.content;
+    state.ui.setObjectiveText(def.blurb ? contentBlurb(def) : contentName(state.session.content));
+    syncAll();
+  }
+  if ($('screen-results').classList.contains('active') && state.lb) $('results-lb').textContent = lbText(state.lb);
+  if ($('screen-scores').classList.contains('active')) renderBoard(state.boardTab || 'global');
+  if ($('screen-settings').classList.contains('active')) buildSettings($('settings-body'));
+  if ($('screen-help').classList.contains('active')) { const b = $('help-body'); b.innerHTML = ''; b.appendChild(state.ui.helpContent(keyLabels())); }
 }
 
 // ---- autosave -------------------------------------------------------------------------------------------

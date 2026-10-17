@@ -1,11 +1,11 @@
 {
   "name": "settlement-trails",
   "version": "1.0.0",
-  "description": "Settlement Trails \u2014 a cozy low-poly settlement builder for the browser.",
+  "description": "Settlement Trails — a cozy low-poly settlement builder for the browser.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/starhermit.test.js && node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js && node --test tests/gfx.test.js",
+    "test": "node tests/starhermit.test.js && node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js && node --test tests/gfx.test.js tests/i18n.test.mjs",
     "test:e2e": "node tests/e2e.mjs"
   },
   "license": "PolyForm-Noncommercial-1.0.0",
