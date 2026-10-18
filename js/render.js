@@ -15,12 +15,12 @@ import { FXAAShader } from '../vendor/addons/shaders/FXAAShader.js';
 import { RoomEnvironment } from '../vendor/addons/environments/RoomEnvironment.js';
 import { TERRAIN } from './rules.js';
 import { RngStream } from './rng.js';
-import { detectPreset, resolve, describe, SHADOW_MAP, PARTICLE_POOL } from './gfx.js';
+import { detectLevel, presetForLevel, resolve, describe, SHADOW_MAP, particlePool, PARTICLE_MAX } from './gfx.js';
 
 export const LAYER = { ENV: 0, GAME: 1, SELECT: 2, FX: 3 };
 
 const TILE = 1;            // world units per grid cell
-const MAX_PARTICLES = 2000;
+const MAX_PARTICLES = PARTICLE_MAX;
 
 // Palettes reinforced by shape; color-vision variants swap selection/ghost hues.
 const PALETTES = {
@@ -95,8 +95,7 @@ function noiseCanvas(size, seed, octaves = 3) {
   return out;
 }
 
-function makeGroundTexture() {
-  const size = 128;
+function makeGroundTexture(size = 128) {
   const n = noiseCanvas(size, 0x51ee7, 4);
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -115,8 +114,7 @@ function makeGroundTexture() {
   return tex;
 }
 
-function makeWaterNormal() {
-  const size = 64;
+function makeWaterNormal(size = 64) {
   const h = noiseCanvas(size, 0xa11ce, 3);
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -138,6 +136,59 @@ function makeWaterNormal() {
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
+}
+
+// Merge a building's parts into one mesh per material kind: each part's geometry is transformed into the
+// group's space and carries its colour as vertex colours, so the merged mesh looks the same as the parts.
+function mergeParts(group, detailed) {
+  group.updateMatrixWorld(true);
+  const buckets = new Map();
+  for (const m of group.children) {
+    const mat = m.material;
+    const key = [mat.type, mat.roughness, mat.metalness, mat.envMapIntensity, mat.emissive?.getHex(), mat.emissiveIntensity, m.castShadow].join('|');
+    if (!buckets.has(key)) buckets.set(key, { mat, cast: m.castShadow, parts: [] });
+    buckets.get(key).parts.push(m);
+  }
+  const out = new THREE.Group();
+  out.userData = { ...group.userData };
+  for (const { mat, cast, parts } of buckets.values()) {
+    const geos = parts.map((m) => {
+      const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+      const n = geo.attributes.position.count, c = m.material.color, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return geo;
+    });
+    const merged = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv', 'color']) {
+      const size = geos[0].attributes[name].itemSize;
+      const arr = new Float32Array(geos.reduce((n, gg) => n + gg.attributes[name].count * size, 0));
+      let off = 0;
+      for (const gg of geos) { arr.set(gg.attributes[name].array, off); off += gg.attributes[name].array.length; }
+      merged.setAttribute(name, new THREE.BufferAttribute(arr, size));
+    }
+    merged.computeBoundingSphere();
+    const material = mat.clone();
+    material.color.setHex(0xffffff);
+    material.vertexColors = true;
+    if (detailed && mat.flatShading) material.flatShading = true;
+    const mesh = new THREE.Mesh(merged, material);
+    mesh.castShadow = cast;
+    mesh.receiveShadow = true;
+    out.add(mesh);
+    for (const gg of geos) gg.dispose();
+  }
+  disposeObj(group);
+  return out;
+}
+
+// Run a post pass at a fraction of the frame: EffectComposer.addPass / setSize resize every pass to the
+// full frame, so the pass's own setSize applies the scale (half-res bloom / GTAO below Ultra).
+function atScale(pass, k) {
+  if (!(k > 0 && k < 1)) return pass;
+  const setSize = pass.setSize.bind(pass);
+  pass.setSize = (w, h) => setSize(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)));
+  return pass;
 }
 
 function makeDotTexture() {
@@ -193,9 +244,12 @@ export class TownRenderer {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
     this.gpu = TownRenderer._gpuName(this.renderer);
-    const mobile = (navigator.maxTouchPoints || 0) > 0 && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
-      || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
-    this.detected = detectPreset(this.gpu, { mobile });
+    // StarHermit hardware level (js/gpu-level.js): this renderer's GPU string plus device facts
+    // (phone/tablet, cores, memory, screen) → level 0–20 → the Auto preset.
+    let system = {};
+    try { system = globalThis.StarHermitGpu ? globalThis.StarHermitGpu.detectSystem() : {}; } catch { system = {}; }
+    this.level = detectLevel(this.gpu, { ...system, webgl: true, webgl2: true });
+    this.detected = presetForLevel(this.level);
     this.size = [0, 0];
     this.pixelRatio = 1;
     this.adaptiveScale = 1;
@@ -221,7 +275,7 @@ export class TownRenderer {
 
     this.palette = PALETTES[settings.colorPalette] || PALETTES.default;
     this.reducedMotion = !!settings.reducedMotion;
-    this.q = resolve(settings.graphics, this.detected);
+    this.q = resolve(settings.graphics, this.detected, this.level);
 
     this.content = null;
     this.theme = null;
@@ -303,7 +357,7 @@ export class TownRenderer {
     if (key === this._gfxKey) return;
     this._gfxKey = key;
     const prev = this.q;
-    const g = resolve(saved, this.detected);
+    const g = resolve(saved, this.detected, this.level);
     this.q = g;
     const size = SHADOW_MAP[g.shadows];
     const shadowsChanged = !prev || (SHADOW_MAP[prev.shadows] > 0) !== (size > 0) || !this._gfxApplied;
@@ -315,11 +369,13 @@ export class TownRenderer {
       this.keyLight.shadow.map = null;
     }
     // Particles: resize the live pool; drop any in flight beyond it.
-    this.poolSize = PARTICLE_POOL[g.particles];
+    this.poolSize = Math.min(MAX_PARTICLES, particlePool(g));
     if (this.pLife) { this.pLife.fill(0); this.pPos.fill(-999); this.pHead = 0; }
     this._applyDetailLights();
-    // Surface detail swaps materials, so rebuild the scene from retained content.
-    if (this._gfxApplied && prev && prev.detail !== g.detail && this.content) this._rebuildScene();
+    // Surface detail swaps materials and the budget sizes textures, meshes and clouds, so rebuild the
+    // scene from retained content when either changes.
+    const assets = (q) => q && [q.detail, q.budget.texture, q.budget.segments, q.budget.clouds].join('|');
+    if (this._gfxApplied && prev && assets(prev) !== assets(g) && this.content) this._rebuildScene();
     else if (shadowsChanged) this._refreshMaterials();
     this._gfxApplied = true;
     this.adaptiveScale = 1;
@@ -338,6 +394,7 @@ export class TownRenderer {
     const px = [Math.round(this.size[0] * this.pixelRatio), Math.round(this.size[1] * this.pixelRatio)];
     return {
       gpu: this.gpu || 'unknown GPU',
+      level: this.level,
       detected: this.detected,
       resolved: this.q,
       summary: describe(this.q, px),
@@ -500,8 +557,12 @@ export class TownRenderer {
     // Land tiles: ONE InstancedMesh with per-instance color (draw-call budget).
     // Water stays individual meshes for bobbing animation.
     const landGeo = new THREE.BoxGeometry(1, 1, 1);
-    if (this.detailed && !this.groundTex) this.groundTex = makeGroundTexture();
-    if (this.detailed && !this.waterNormal) this.waterNormal = makeWaterNormal();
+    // Procedural textures at the preset's budget size (ground; water normal map at half).
+    const texSize = this.q.budget.texture;
+    if (this.groundTex && this.groundTex.image.width !== texSize) { this.groundTex.dispose(); this.groundTex = null; }
+    if (this.waterNormal && this.waterNormal.image.width !== texSize / 2) { this.waterNormal.dispose(); this.waterNormal = null; }
+    if (this.detailed && !this.groundTex) this.groundTex = makeGroundTexture(texSize);
+    if (this.detailed && !this.waterNormal) this.waterNormal = makeWaterNormal(texSize / 2);
     const landMat = this._mat(0xffffff, { roughness: 0.95, env: 0.2, map: this.detailed ? this.groundTex : null });
     const waterMat = this.detailed
       ? new THREE.MeshStandardMaterial({
@@ -522,17 +583,24 @@ export class TownRenderer {
         const t = content.terrain[y * w + x];
         const hh = this.cellH[y * w + x];
         if (t === TERRAIN.WATER) {
-          const m = new THREE.Mesh(tileGeo, waterMat);
+          // Water tiles: placeholders here, drawn as one InstancedMesh below (one draw call).
+          const m = new THREE.Object3D();
           m.position.set(this._wx(x), -0.27, this._wz(y));
-          m.receiveShadow = true;
           this.waterMeshes.push(m);
           this.waterPhase.push(rng.float() * Math.PI * 2);
-          this.tileGroup.add(m);
           continue;
         }
         const height = 0.3 + hh;
         this._landCells.push({ x, y, t, height, shade: 0.92 + rng.float() * 0.12 });
       }
+    }
+    this.waterInst = null;
+    if (this.waterMeshes.length) {
+      const water = new THREE.InstancedMesh(tileGeo, waterMat, this.waterMeshes.length);
+      water.receiveShadow = true;
+      this.waterInst = water;
+      this._syncWater(true);
+      this.tileGroup.add(water);
     }
     if (this.detailed && this.waterMeshes.length) {
       // Opaque riverbed under the translucent water so the sky never shows through.
@@ -590,6 +658,19 @@ export class TownRenderer {
     this._applyCamera(1);
   }
 
+  /** Copy the water placeholders' (bobbing) positions into the instanced water mesh. */
+  _syncWater(bounds = false) {
+    const inst = this.waterInst;
+    if (!inst) return;
+    const m4 = this._m4 || (this._m4 = new THREE.Matrix4());
+    for (let i = 0; i < this.waterMeshes.length; i++) {
+      const p = this.waterMeshes[i].position;
+      inst.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z));
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (bounds) inst.computeBoundingSphere();
+  }
+
   _wx(x) { return (x - (this.content.grid.w - 1) / 2) * TILE; }
   _wz(y) { return (y - (this.content.grid.h - 1) / 2) * TILE; }
   cellTopY(x, y) { return this.cellH[y * this.content.grid.w + x]; }
@@ -612,8 +693,9 @@ export class TownRenderer {
         }
       }
     }
-    const cone = new THREE.ConeGeometry(0.22, 0.7, 6);
-    const trunk = new THREE.CylinderGeometry(0.05, 0.07, 0.25, 5);
+    const seg = this.q.budget.segments;
+    const cone = new THREE.ConeGeometry(0.22, 0.7, Math.round(6 * seg));
+    const trunk = new THREE.CylinderGeometry(0.05, 0.07, 0.25, Math.round(5 * seg));
     const leafMat = this._mat(this.theme.forest, { roughness: 0.75 });
     const trunkMat = this._mat(0x6b4a2f, { roughness: 0.9 });
     if (this.detailed) {
@@ -676,7 +758,7 @@ export class TownRenderer {
     // A few low-poly clouds drifting far above; pure decoration on env layer.
     this.clouds = [];
     const mat = this._mat(0xffffff, { transparent: true, opacity: 0.85, roughness: 1, env: 0.2 });
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < this.q.budget.clouds; i++) {
       const g = new THREE.Group();
       const n = rng.int(2, 4);
       for (let j = 0; j < n; j++) {
@@ -694,7 +776,17 @@ export class TownRenderer {
   }
 
   // ---- Building meshes -------------------------------------------------------------
-  _buildingGroup(type) {
+  /**
+   * A building as a group of parts. Placed buildings merge their parts into one vertex-coloured mesh per
+   * material kind (body / roof / window glow / banner …), so a building costs 1–4 draw calls instead of
+   * one per part, on every preset; the ghost preview keeps separate parts so it can be tinted.
+   */
+  _buildingGroup(type, merge = true) {
+    const g = this._buildingParts(type);
+    return merge ? mergeParts(g, this.detailed) : g;
+  }
+
+  _buildingParts(type) {
     const g = new THREE.Group();
     const add = (geo, color, x = 0, y = 0, z = 0, ry = 0, opts) => {
       const m = new THREE.Mesh(geo, this._mat(color, opts));
@@ -706,6 +798,7 @@ export class TownRenderer {
       return m;
     };
     const detailed = this.detailed;
+    const seg = this.q.budget.segments;
     const roof = { roughness: 0.6, env: 0.5 };
     const glow = { roughness: 0.3, emissive: 0xffb65a, emissiveIntensity: this.windowGlow || 1.4 };
     const win = (x, y, z, ry = 0) => {
@@ -739,7 +832,7 @@ export class TownRenderer {
         add(new THREE.BoxGeometry(0.12, 0.18, 0.02), 0x6b4a2f, 0.1, 0.09, 0.26); // door
         win(-0.11, 0.22, 0.255); win(0.255, 0.22, 0, Math.PI / 2);
         const chim = add(new THREE.BoxGeometry(0.08, 0.16, 0.08), 0x9a8a7a, -0.12, 0.5, -0.1);
-        g.userData.chimney = chim;
+        g.userData.chimney = { position: chim.position.clone() };
         break;
       }
       case 'farm': {
@@ -753,14 +846,14 @@ export class TownRenderer {
       case 'lumber': {
         add(new THREE.BoxGeometry(0.45, 0.3, 0.4), 0x8a6a44, 0, 0.15, 0);
         add(new THREE.ConeGeometry(0.38, 0.25, 4), 0x5f4430, 0, 0.42, 0, Math.PI / 4, roof);
-        add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 6), 0x6b4a2f, 0.28, 0.07, 0.15, Math.PI / 2);
-        add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 6), 0x7a5636, 0.28, 0.2, 0.1, Math.PI / 2);
+        add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, Math.round(6 * seg)), 0x6b4a2f, 0.28, 0.07, 0.15, Math.PI / 2);
+        add(new THREE.CylinderGeometry(0.07, 0.07, 0.4, Math.round(6 * seg)), 0x7a5636, 0.28, 0.2, 0.1, Math.PI / 2);
         break;
       }
       case 'well': {
-        add(new THREE.CylinderGeometry(0.2, 0.22, 0.3, 8), 0x9a9a9a, 0, 0.15, 0);
+        add(new THREE.CylinderGeometry(0.2, 0.22, 0.3, Math.round(8 * seg)), 0x9a9a9a, 0, 0.15, 0);
         add(new THREE.ConeGeometry(0.28, 0.2, 4), 0x8c4a2f, 0, 0.5, 0, Math.PI / 4, roof);
-        if (detailed) add(new THREE.CylinderGeometry(0.16, 0.16, 0.02, 12), 0x3d6f9e, 0, 0.3, 0, 0, { roughness: 0.1, env: 1.2 }); // water surface
+        if (detailed) add(new THREE.CylinderGeometry(0.16, 0.16, 0.02, Math.round(12 * seg)), 0x3d6f9e, 0, 0.3, 0, 0, { roughness: 0.1, env: 1.2 }); // water surface
         add(new THREE.BoxGeometry(0.04, 0.25, 0.04), 0x6b4a2f, 0.16, 0.35, 0);
         add(new THREE.BoxGeometry(0.04, 0.25, 0.04), 0x6b4a2f, -0.16, 0.35, 0);
         break;
@@ -929,7 +1022,7 @@ export class TownRenderer {
     if (x == null || !type) { this.clearGhost(); return; }
     if (this.ghostType !== type) {
       this.clearGhost();
-      this.ghost = this._buildingGroup(type);
+      this.ghost = this._buildingGroup(type, false);
       this.ghost.traverse(o => {
         if (o.material) {
           o.material = o.material.clone();
@@ -1188,7 +1281,7 @@ export class TownRenderer {
 
   _postKey() {
     const g = this.q;
-    return g.post ? [g.ao, g.bloom, g.grade, g.antialias, this.size[0], this.size[1], this.pixelRatio].join('|') : 'none';
+    return g.post ? [g.ao, g.bloom, g.grade, g.antialias, g.budget.bloomRes, g.budget.aoRes, this.size[0], this.size[1], this.pixelRatio].join('|') : 'none';
   }
 
   _buildPost() {
@@ -1210,7 +1303,7 @@ export class TownRenderer {
       composer.setSize(w, h);
       composer.addPass(new RenderPass(this.scene, this.camera));
       if (g.ao !== 'off') {
-        const ao = new GTAOPass(this.scene, this.camera, w * pr, h * pr);
+        const ao = atScale(new GTAOPass(this.scene, this.camera, w * pr, h * pr), g.budget.aoRes);
         ao.output = GTAOPass.OUTPUT.Default;
         ao.blendIntensity = g.ao === 'high' ? 0.85 : 0.7;
         ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 0.6, scale: 1.0, samples: g.ao === 'high' ? 16 : 8 });
@@ -1231,7 +1324,7 @@ export class TownRenderer {
       }
       if (g.bloom === 'on') {
         // High threshold: only window glow, water glints and bright highlights bloom.
-        composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.4, 0.9));
+        composer.addPass(atScale(new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.4, 0.9), g.budget.bloomRes));
       }
       composer.addPass(new OutputPass());
       if (g.grade === 'on') composer.addPass(new ShaderPass(GradeShader));
@@ -1279,6 +1372,7 @@ export class TownRenderer {
     for (let i = 0; i < this.waterMeshes.length; i++) {
       this.waterMeshes[i].position.y = -0.27 + (waterAnim ? Math.sin(t * 1.4 + this.waterPhase[i]) * 0.02 : 0);
     }
+    this._syncWater();
     if (waterAnim && this.waterMat && this.waterMat.normalMap) {
       this.waterMat.normalMap.offset.set(t * 0.03, t * 0.017);
     }
@@ -1312,7 +1406,7 @@ export class TownRenderer {
     // Chimney smoke (top particle tier, full motion only).
     if (this.q.particles === 'high' && moving) {
       this.smokeTimer += dtMs;
-      if (this.smokeTimer > 260) {
+      if (this.smokeTimer > this.q.budget.smokeMs) { // the preset budget's puff interval
         this.smokeTimer = 0;
         const houses = [];
         for (const g of this.buildingMeshes.values()) if (g.userData.chimney) houses.push(g);

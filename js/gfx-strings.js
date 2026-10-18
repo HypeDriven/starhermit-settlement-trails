@@ -11,6 +11,7 @@ const EN = {
   adaptive: 'Adaptive resolution',
   showFps: 'Show frame rate',
   postUnavailable: 'Post-processing is unavailable on this device; rendering without it.',
+  level: 'Level {n}',
   categories: {
     shadows: 'Shadows', ao: 'Ambient occlusion', bloom: 'Bloom', grade: 'Colour grade',
     antialias: 'Anti-aliasing', particles: 'Particles', detail: 'Surface detail', water: 'Water',
@@ -37,6 +38,7 @@ const ES = {
   adaptive: 'Resolución adaptativa',
   showFps: 'Mostrar fotogramas por segundo',
   postUnavailable: 'El posprocesado no está disponible en este dispositivo; se renderiza sin él.',
+  level: 'Nivel {n}',
   categories: {
     shadows: 'Sombras', ao: 'Oclusión ambiental', bloom: 'Resplandor', grade: 'Corrección de color',
     antialias: 'Suavizado de bordes', particles: 'Partículas', detail: 'Detalle de superficies', water: 'Agua',
@@ -60,6 +62,7 @@ const DE = {
   adaptive: 'Adaptive Auflösung',
   showFps: 'Bildrate anzeigen',
   postUnavailable: 'Nachbearbeitung ist auf diesem Gerät nicht verfügbar; es wird ohne sie gerendert.',
+  level: 'Stufe {n}',
   categories: {
     shadows: 'Schatten', ao: 'Umgebungsverdeckung', bloom: 'Bloom', grade: 'Farbkorrektur',
     antialias: 'Kantenglättung', particles: 'Partikel', detail: 'Oberflächendetails', water: 'Wasser',
@@ -81,6 +84,7 @@ const FR = {
   adaptive: 'Résolution adaptative',
   showFps: 'Afficher la fréquence d’images',
   postUnavailable: 'Le post-traitement n’est pas disponible sur cet appareil ; rendu sans post-traitement.',
+  level: 'Niveau {n}',
   categories: {
     shadows: 'Ombres', ao: 'Occlusion ambiante', bloom: 'Halo lumineux', grade: 'Étalonnage des couleurs',
     antialias: 'Anticrénelage', particles: 'Particules', detail: 'Détail des surfaces', water: 'Eau',
@@ -104,6 +108,7 @@ const PT_BR = {
   adaptive: 'Resolução adaptável',
   showFps: 'Mostrar taxa de quadros',
   postUnavailable: 'O pós-processamento não está disponível neste dispositivo; renderizando sem ele.',
+  level: 'Nível {n}',
   categories: {
     shadows: 'Sombras', ao: 'Oclusão ambiente', bloom: 'Brilho', grade: 'Correção de cor',
     antialias: 'Suavização de serrilhado', particles: 'Partículas', detail: 'Detalhe das superfícies', water: 'Água',
@@ -125,6 +130,7 @@ const IT = {
   adaptive: 'Risoluzione adattiva',
   showFps: 'Mostra frequenza fotogrammi',
   postUnavailable: 'La post-elaborazione non è disponibile su questo dispositivo; rendering senza.',
+  level: 'Livello {n}',
   categories: {
     shadows: 'Ombre', ao: 'Occlusione ambientale', bloom: 'Bagliore', grade: 'Correzione colore',
     antialias: 'Antialiasing', particles: 'Particelle', detail: 'Dettaglio superfici', water: 'Acqua',

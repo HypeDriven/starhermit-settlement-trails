@@ -315,7 +315,8 @@ function refreshGraphicsSummary() {
   if (!el) return;
   const info = state.view?.graphicsInfo();
   if (!info) { el.textContent = T('WebGL unavailable'); return; }
-  el.textContent = [info.gpu, info.summary].filter(Boolean).join(' · ');
+  const level = Number.isFinite(info.level) ? gfxStrings(getLang()).level.replace('{n}', info.level) : null;
+  el.textContent = [info.gpu, level, info.summary].filter(Boolean).join(' · ');
   el.dataset.preset = info.resolved.preset;
   const note = $('gfx-note');
   if (note) note.hidden = !info.postFailed;

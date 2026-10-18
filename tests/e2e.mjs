@@ -509,6 +509,7 @@ async function graphicsPass(page, name) {
   if (bloomAfter !== 'preset') throw new Error('choosing a preset did not clear overrides');
   const summary = await page.textContent('#gfx-summary');
   if (!/4096² shadows/.test(summary)) throw new Error(`summary not updated for Ultra: "${summary}"`);
+  if (!/ · Level 0 · /.test(summary)) throw new Error(`summary lacks the hardware level: "${summary}"`);
   await closeSettingsAndResume(page);
   await page.waitForTimeout(800);
   await openSettingsFromPause(page);
