@@ -83,7 +83,7 @@ The Three.js canvas fills the game region but is never the only UI. Menus, text,
 
 - **Title/home:** Play is dominant; daily challenge, journey progress, and profile are one level below.
 - **Mode setup:** show rules, expected duration, player count, assists, and whether the result is ranked before commitment.
-- **Play HUD:** objective, progress, current actor/state, pause, and only context-relevant actions.
+- **Play HUD:** objective, progress, current actor/state, pause, and only context-relevant actions. Trade-order rows are updated in place, never rebuilt, and the row of an order that is gone waits (disabled) while a pointer is held in the list, so every Deliver click lands on the order it was pressed on.
 - **Pause/settings:** resume first; audio, graphics, controls, accessibility, help, and leave are clearly separated.
 - **Results:** outcome headline, score breakdown, progress, achievements, comparison, replay/retry, and next recommended action.
 - **Help:** visual rule cards generated from current control mappings and representative legal states.

@@ -12,6 +12,20 @@ export const PORTRAIT_DRAWERS = '(max-width: 700px) and (orientation: portrait)'
 const TOOL_ICONS = { road: '🛤', house: '🏠', farm: '🌾', lumber: '🪓', well: '💧', market: '⚖️', demolish: '✖️', inspect: '🔍' };
 
 function $(id) { return document.getElementById(id); }
+
+// The element a pointer is held on, until it is released; then what waited for the
+// release runs, after the click that release makes.
+let pressed = null;
+const afterRelease = new Set();
+if (globalThis.document) {
+  document.addEventListener('pointerdown', (e) => { pressed = e.target; }, true);
+  for (const type of ['pointerup', 'pointercancel']) {
+    document.addEventListener(type, () => {
+      pressed = null;
+      if (afterRelease.size) setTimeout(() => { const todo = [...afterRelease]; afterRelease.clear(); todo.forEach(f => f()); });
+    }, true);
+  }
+}
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -243,28 +257,50 @@ export class UI {
 
   setObjectiveText(text) { $('objective-text').textContent = text; }
 
+  // One row per order, kept and updated in place: a click only fires when press and release
+  // land on the same button, and the list refreshes on every day with news. Rows of gone
+  // orders wait (disabled) while a pointer is held in the list, so the row under it never
+  // shifts; they leave right after the release.
   updateOrders(state, onFulfill) {
     const list = $('orders-list');
-    list.innerHTML = '';
+    this._orders = [state, onFulfill];
+    const held = !!pressed && list.contains(pressed);
+    const open = new Set(state.orders.map(o => o.id));
+    const rows = new Map();
+    for (const li of [...list.children]) {
+      if (li.dataset.order && open.has(li.dataset.order)) rows.set(li.dataset.order, li);
+      else if (!held) li.remove();
+      else if (li.dataset.order) li.querySelector('button').disabled = true;
+    }
+    if (held) afterRelease.add(this._ordersAgain ||= () => this.updateOrders(...this._orders));
     if (!state.orders.length) {
-      list.appendChild(el('li', 'muted', T('No open orders. New orders arrive every few days.')));
+      if (!list.children.length) list.appendChild(el('li', 'muted'));
+      const empty = list.querySelector(':scope > li.muted');
+      if (empty) empty.textContent = T('No open orders. New orders arrive every few days.');
       return;
     }
     for (const o of state.orders) {
-      const li = el('li');
+      let li = rows.get(o.id);
+      if (!li) {
+        li = el('li');
+        li.dataset.order = o.id;
+        li.appendChild(el('span'));
+        const btn = el('button', 'btn small');
+        btn.addEventListener('click', () => this._orders[1](o.id));
+        const wrap = el('span');
+        wrap.appendChild(el('span', 'exp'));
+        wrap.appendChild(btn);
+        li.appendChild(wrap);
+        list.appendChild(li); // orders only ever join at the end
+      }
       const can = (state.resources[o.want.res] || 0) >= o.want.n;
       const left = o.expiresTick - state.tick;
-      const label = el('span', null, `${o.want.n} ${o.want.res === 'food' ? '🌾' : '🪵'} → ${o.reward} 🪙`);
-      li.appendChild(label);
-      const btn = el('button', 'btn small', T('Deliver'));
+      li.firstChild.textContent = `${o.want.n} ${o.want.res === 'food' ? '🌾' : '🪵'} → ${o.reward} 🪙`;
+      const btn = li.querySelector('button');
+      btn.textContent = T('Deliver');
       btn.disabled = !can;
       btn.title = T(can ? 'Fulfil this order' : 'Not enough goods yet');
-      btn.addEventListener('click', () => onFulfill(o.id));
-      const wrap = el('span');
-      wrap.appendChild(el('span', 'exp', T('{n}d', { n: left }) + ' '));
-      wrap.appendChild(btn);
-      li.appendChild(wrap);
-      list.appendChild(li);
+      li.querySelector('.exp').textContent = T('{n}d', { n: left }) + ' ';
     }
   }
 
