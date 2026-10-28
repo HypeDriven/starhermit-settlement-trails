@@ -236,13 +236,23 @@ export function nextStage(): void {
   quitToTitle();
 }
 export function hasAutosave(): boolean { return !!Store.loadAutosave(); }
+/** The content definition a materialized content came from (so Restart and Next stage work after a resume). */
+function defFor(c: Content): Def {
+  const all = [...Contents.JOURNEY_STAGES, ...Contents.TUTORIALS, ...Contents.CHALLENGES];
+  const found = all.find((d) => d.id === c.id);
+  if (found) return found;
+  if (c.daily) return Contents.dailyContent(c.daily);
+  const m = /^practice-(\w+)-/.exec(c.id);
+  if (m) return Contents.practiceContent(m[1]!, c.seed);
+  return { ...(c as unknown as Def), gridSize: c.grid.w };
+}
 /** main.js resumeAutosave: the snapshot, always resumed paused. */
 export function resumeAutosave(): void {
   const snap = Store.loadAutosave();
   if (!snap) return;
   try {
     const content = snap.content;
-    app.def = content as unknown as Def;
+    app.def = defFor(content);
     app.mode = snap.mode;
     app.session = RestoreSession(snap, { onEvents: handleEvents, onTerminal: handleTerminal });
     app.tutorial = content.steps ? { steps: content.steps, idx: content.steps.length, count: 0 } : null;
@@ -347,6 +357,7 @@ export const canUndo = (): boolean => !!app.session && app.session.allowUndo && 
 export function fulfill(orderId: string): void {
   const s = app.session;
   if (!s) return;
+  ui.setFocus(null);
   const r = s.submit({ type: "fulfill", orderId });
   if (r.ok) afterPlayerAction("fulfill");
   else toast(r.reason && Rules.INVALID_REASONS[r.reason] ? Names.invalidText(r.reason) : T("Cannot fulfil."), true);

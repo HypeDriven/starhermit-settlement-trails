@@ -275,3 +275,22 @@ export function loadAutosave() {
 export function clearAutosave() {
   kv.removeItem(key('autosave'));
 }
+
+// ---- Game options (engine client) -----------------------------------------------------
+// The browser build's settings that are still the game's own on the StarHermit
+// runtime (volumes, mute, graphics, reduced motion, contrast, text size and the
+// language are the runtime's Options there), and every key the browser build
+// kept in the account's settings KV (js/platform.js SYNCED_SETTINGS).
+export const OPTION_KEYS = ['colorPalette', 'cameraShake', 'dayLength', 'leftHanded', 'haptics'];
+export const BROWSER_KEYS = ['music', 'effects', 'ambience', 'voice', 'muteAll', 'graphics', 'reducedMotion', 'highContrast', 'colorPalette',
+  'textSize', 'leftHanded', 'holdToPan', 'haptics', 'cameraShake', 'dayLength'];
+export const PALETTES = ['default', 'deuteranopia', 'protanopia', 'tritanopia'];
+/** A valid value for a game option, or undefined. */
+export function pickOption(k, v) {
+  switch (k) {
+    case 'colorPalette': return typeof v === 'string' && PALETTES.includes(v) ? v : undefined;
+    case 'dayLength': return v === 'normal' || v === 'relaxed' ? v : undefined;
+    case 'cameraShake': case 'leftHanded': case 'haptics': return typeof v === 'boolean' ? v : undefined;
+    default: return undefined;
+  }
+}

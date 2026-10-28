@@ -1,15 +1,21 @@
 {
   "name": "settlement-trails",
   "version": "1.0.0",
-  "description": "Settlement Trails — a cozy low-poly settlement builder for the browser.",
+  "description": "Settlement Trails — a cozy low-poly settlement builder on the StarHermit engine.",
   "type": "module",
-  "scripts": {
-    "start": "node server.js",
-    "test": "node tests/starhermit.test.js && node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js && node --test tests/gfx.test.js tests/i18n.test.mjs",
-    "test:e2e": "node tests/e2e.mjs"
-  },
-  "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:native",
+    "test:unit": "node tests/rules.test.js && node tests/session.test.js && node tests/store.test.js && node --test tests/save.test.mjs tests/i18n.test.mjs",
+    "test:native": "node tests/native.mjs",
+    "test:browser": "node tools/browser-play.mjs .",
+    "start": "node server.js",
+    "package": "node tools/package-web.mjs",
+    "css": "node tools/css.mjs",
+    "plays": "node tools/gen-plays.mjs",
+    "textures": "node tools/bake-textures.mjs"
+  },
   "devDependencies": {
     "playwright-core": "^1.62.1"
   }

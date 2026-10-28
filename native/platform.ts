@@ -117,21 +117,8 @@ export function syncState(): "saving" | "synced" | "offline" | "error" | null {
 export function flush(): void { void saves.flush().catch(() => undefined); }
 
 // --- the game's options (settings document) ---------------------------------------------------
-/** js/platform.js SYNCED_SETTINGS that are still the game's (the rest are the runtime's Options). */
-const OPTION_KEYS = ["colorPalette", "cameraShake", "dayLength", "leftHanded", "haptics"] as const;
-/** Every key the browser build kept in the account's settings KV. */
-const BROWSER_KEYS = ["music", "effects", "ambience", "voice", "muteAll", "graphics", "reducedMotion", "highContrast", "colorPalette",
-  "textSize", "leftHanded", "holdToPan", "haptics", "cameraShake", "dayLength"];
-const PALETTES = ["default", "deuteranopia", "protanopia", "tritanopia"];
-/** A valid value for an option, or undefined. */
-export function pickOption(k: string, v: unknown): unknown {
-  switch (k) {
-    case "colorPalette": return typeof v === "string" && PALETTES.includes(v) ? v : undefined;
-    case "dayLength": return v === "normal" || v === "relaxed" ? v : undefined;
-    case "cameraShake": case "leftHanded": case "haptics": return typeof v === "boolean" ? v : undefined;
-    default: return undefined;
-  }
-}
+const OPTION_KEYS = Store.OPTION_KEYS as readonly ("colorPalette" | "cameraShake" | "dayLength" | "leftHanded" | "haptics")[];
+const pickOption = Store.pickOption;
 let settings: Settings = Store.loadSettings();
 const optionListeners = new Set<() => void>();
 export function onOptionsChange(fn: () => void): void { optionListeners.add(fn); }
@@ -158,7 +145,7 @@ function importLegacy(): void {
     const v = pickOption(k, legacyStore.legacy(k));
     if (v !== undefined && settings[k] !== v) { settings[k] = v as never; changed = true; }
   }
-  for (const k of keys) if (BROWSER_KEYS.includes(k) || k.startsWith("ui.")) legacyStore.removeLegacy(k);
+  for (const k of keys) if (Store.BROWSER_KEYS.includes(k) || k.startsWith("ui.")) legacyStore.removeLegacy(k);
   if (changed) { Store.saveSettings(settings); persist(); optionsChanged(); }
 }
 

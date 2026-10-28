@@ -1,0 +1,96 @@
+# The menus on a desktop: every picker and panel opens and closes, the
+# settings change, a Practice settlement builds and undoes, a Journey stage is
+# paused, restarted, left and resumed from its autosave.
+# viewport 1280x800@1
+until 600 Daily Trail
+frames 30
+click =Challenges
+until 300 Against the Sun
+expect Road limit: 10 tiles.
+frames 10
+click =← Back
+until 300 Daily Trail
+frames 10
+click =Daily Trail
+until 300 One shared map for everyone today.
+expect Ranked
+frames 10
+key Escape 1
+until 300 Daily Trail
+frames 10
+click =Scores
+until 300 Scoreboards
+expect No scores yet
+frames 5
+click =Daily
+until 300 Today’s shared seed.
+frames 5
+click =✕ Close
+until 300 Daily Trail
+frames 10
+click =Help
+until 300 How to play
+expect Trade orders
+frames 5
+key Escape 1
+frames 10
+click =Settings
+until 300 Day length (timing assistance)
+frames 5
+click =Default
+frames 10
+click =Deuteranopia-safe
+frames 10
+expect Deuteranopia-safe
+save menus-settings
+click =✕ Close
+until 300 Daily Trail
+frames 10
+click =Practice
+until 300 Unranked, undo enabled.
+frames 10
+click Start Relaxed
+until 300 Day 0 / 45
+frames 150
+# Road tool, one step up from the hall, build; undo it
+key Digit2 1
+key ArrowUp 1
+key Enter 1
+frames 5
+until 120 Road built.
+expect ↩
+key KeyU 1
+frames 5
+until 120 1. [D0] Settlement founded.
+key Escape 1
+frames 5
+key Escape 1
+until 120 Restart scenario
+frames 5
+click =Leave settlement
+until 300 Resume saved settlement
+frames 10
+click =↩ Resume saved settlement
+until 300 Welcome back
+frames 10
+expect Practice
+key Space 1
+frames 5
+expect ▶▶
+key Escape 1
+until 120 Restart scenario
+frames 5
+click =Restart scenario
+until 300 Day 0 / 45
+frames 10
+key Escape 1
+until 120 Leave settlement
+frames 5
+click =Help
+until 300 How to play
+frames 5
+click =✕ Close
+frames 10
+click =Resume
+frames 10
+expect Day 0 / 45

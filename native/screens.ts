@@ -55,7 +55,7 @@ function para(text: string, width: number, cls = "text", id?: string): void {
 }
 interface Btn {
   id: string; text: string; style?: string; act: () => void; disabled?: boolean; name?: string; selected?: boolean;
-  content?: () => void; width?: number; height?: number; quiet?: boolean;
+  content?: () => void; width?: number; height?: number; quiet?: boolean; tip?: string;
 }
 const buttonWidth = (text: string, style: string): number => textWidth(text, style, "button") + 2;
 function button(b: Btn): void {
@@ -63,6 +63,7 @@ function button(b: Btn): void {
   const opts: ui.ButtonOptions = {};
   if (b.disabled) opts.disabled = true;
   if (b.selected !== undefined) opts.selected = b.selected;
+  if (b.tip) (opts as { tooltip?: string }).tooltip = b.tip;
   if (b.content) opts.content = b.content;
   else if (b.width != null && buttonWidth(b.text, style) > b.width) {
     const inner = b.width - 34;
@@ -394,7 +395,7 @@ function objectiveRail(w: number): void {
         ui.style("order-text").label(`${o.want.n} ${o.want.res === "food" ? "🌾" : "🪵"} → ${o.reward} 🪙`);
         ui.spacer();
         ui.style("exp").label(T("{n}d", { n: left }));
-        button({ id: `deliver-${o.id}`, text: T("Deliver"), name: `${T("Deliver")} ${o.want.n} ${T(o.want.res)}`, style: "btn-small", disabled: !can, act: () => fulfill(o.id), quiet: true });
+        button({ id: `deliver-${o.id}`, text: T("Deliver"), name: `${T("Deliver")} ${o.want.n} ${T(o.want.res)}`, style: "btn-small", disabled: !can, act: () => fulfill(o.id), quiet: true, tip: can ? T("Fulfil this order") : T("Not enough goods yet") });
       }, { style: "order-row", width: w, spacing: 8, align: "center" });
     }
   }, { spacing: 6, width: w });
@@ -449,12 +450,12 @@ function hud(L: Layout): void {
   const paused = s.paused && app.countdown == null;
   const speedText = paused ? "⏸" : ["⏸", "▶", "▶▶", "▶▶▶"][s.speed] || "▶";
   const btns: Btn[] = [
-    { id: "btn-speed", text: speedText, name: paused ? T("Resume time") : T("Speed {n}", { n: s.speed }), style: "btn-icon", act: cycleSpeed, width: speedText.length > 2 ? 64 : 44 },
+    { id: "btn-speed", text: speedText, name: paused ? T("Resume time") : T("Speed {n}", { n: s.speed }), tip: T("Game speed (Space)"), style: "btn-icon", act: cycleSpeed, width: speedText.length > 2 ? 64 : 44 },
   ];
-  if (canUndo()) btns.push({ id: "btn-undo", text: "↩", name: T("Undo"), style: "btn-icon", act: undo, width: 44 });
-  btns.push({ id: "btn-hint", text: "💡", name: T("Hint"), style: "btn-icon", act: showHint, width: 44, quiet: true });
-  btns.push({ id: "btn-center", text: "⌖", name: T("Center map"), style: "btn-icon", act: centerCamera, width: 44 });
-  btns.push({ id: "btn-pause", text: "⏸", name: T("Pause"), style: "btn-icon", act: pauseGame, width: 44, quiet: true });
+  if (canUndo()) btns.push({ id: "btn-undo", text: "↩", name: T("Undo"), tip: T("Undo (U)"), style: "btn-icon", act: undo, width: 44 });
+  btns.push({ id: "btn-hint", text: "💡", name: T("Hint"), tip: T("Hint (H)"), style: "btn-icon", act: showHint, width: 44, quiet: true });
+  btns.push({ id: "btn-center", text: "⌖", name: T("Center map"), tip: T("Center map (C)"), style: "btn-icon", act: centerCamera, width: 44 });
+  btns.push({ id: "btn-pause", text: "⏸", name: T("Pause"), tip: T("Pause (Esc)"), style: "btn-icon", act: pauseGame, width: 44, quiet: true });
   const buttons = (): void => { ui.row("hud-buttons", () => { for (const b of btns) button({ ...b, act: () => { b.act(); later(() => ui.setFocus(null)); } }); }, { spacing: 8, align: "center" }); };
   const center = (): void => {
     ui.row("hud-center", () => {
@@ -499,10 +500,10 @@ function toolbox(L: Layout, x: number): void {
     if (pressed && fresh()) later(() => { sound("ui"); setTool(t); ui.setFocus(null); });
   };
   const maxW = L.lw - 16;
-  ui.place("toolbox", { anchor: "top-start", x, y: vertical ? 56 : L.lh - (lastSize.get("toolbox")?.height ?? 70 * L.sc) / L.sc - 11 }, () => {
+  ui.place("toolbox", { anchor: "top-start", x, y: vertical ? 104 : L.lh - (lastSize.get("toolbox")?.height ?? 70 * L.sc) / L.sc - 11 }, () => {
     let r: ui.Rect;
     if (vertical) {
-      const maxH = L.lh * 0.7;
+      const maxH = Math.min(L.lh * 0.7, L.lh - 116);
       const prevIn = lastSize.get("toolbox-in");
       const scroll = !!prevIn && prevIn.height / L.sc > maxH;
       r = ui.column("toolbox-box", () => {
@@ -554,7 +555,7 @@ function boardTargets(L: Layout): void {
   const b = st.cells[c.y * st.grid.w + c.x];
   const terrain = T(Rules.TERRAIN_NAME[st.terrain[c.y * st.grid.w + c.x]!]!);
   const r = 18 * L.sc;
-  ui.target(`${T("Cursor")}: ${T("Tile {x},{y}", { x: c.x, y: c.y })}, ${terrain}${b ? ", " + Names.buildingName(b.type) : ""}`,
+  ui.target(`${T("Settlement playfield")}. ${T("Cursor")}: ${T("Tile {x},{y}", { x: c.x, y: c.y })}, ${terrain}${b ? ", " + Names.buildingName(b.type) : ""}`,
     { x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r }, { role: "label" });
 }
 

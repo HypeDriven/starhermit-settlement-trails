@@ -93,6 +93,7 @@ interface StoreApi {
   exportSaveDoc(): SaveDoc; mergeSaveDocs(local: SaveDoc, remote: SaveDoc): SaveDoc; mergeSaveDoc(doc: unknown): boolean; importSaveDoc(doc: unknown): boolean;
   saveAutosave(s: Snapshot): void; loadAutosave(): Snapshot | null; clearAutosave(): void;
   DEFAULT_SETTINGS: Settings;
+  OPTION_KEYS: string[]; BROWSER_KEYS: string[]; pickOption(k: string, v: unknown): unknown;
 }
 interface NamesApi {
   contentName(def: { name?: string } | null, o?: { bare?: boolean }): string; contentBlurb(def: { blurb?: string } | null): string;
