@@ -337,10 +337,10 @@ function gameScreen(L: Layout): void {
   if (toggles) {
     const ty = L.wide ? 58 : L.land ? 52 : L.phone ? hudH - 46 : 58;
     ui.place("toggle-l", { anchor: "top-start", x: 6, y: ty }, () => {
-      button({ id: "rail-left-toggle", text: "☰", name: T("Toggle objectives panel"), style: "rail-toggle", selected: app.railLeft, act: () => toggleRail("left"), width: 44 });
+      button({ id: "rail-left-toggle", text: "☰", name: T("Toggle objectives panel"), style: "rail-toggle", selected: app.railLeft, act: () => { toggleRail("left"); later(() => ui.setFocus(null)); }, width: 44 });
     });
     ui.place("toggle-r", { anchor: "top-start", x: L.lw - 50, y: ty }, () => {
-      button({ id: "rail-right-toggle", text: "ℹ", name: T("Toggle inspector panel"), style: "rail-toggle", selected: app.railRight, act: () => toggleRail("right"), width: 44 });
+      button({ id: "rail-right-toggle", text: "ℹ", name: T("Toggle inspector panel"), style: "rail-toggle", selected: app.railRight, act: () => { toggleRail("right"); later(() => ui.setFocus(null)); }, width: 44 });
     });
   }
   if (app.countdown != null) {
@@ -391,12 +391,23 @@ function objectiveRail(w: number): void {
     for (const o of st.orders) {
       const can = (st.resources[o.want.res] || 0) >= o.want.n;
       const left = o.expiresTick - st.tick;
-      ui.row(`order-${o.id}`, () => {
-        ui.style("order-text").label(`${o.want.n} ${o.want.res === "food" ? "🌾" : "🪵"} → ${o.reward} 🪙`);
-        ui.spacer();
-        ui.style("exp").label(T("{n}d", { n: left }));
-        button({ id: `deliver-${o.id}`, text: T("Deliver"), name: `${T("Deliver")} ${o.want.n} ${T(o.want.res)}`, style: "btn-small", disabled: !can, act: () => fulfill(o.id), quiet: true, tip: can ? T("Fulfil this order") : T("Not enough goods yet") });
-      }, { style: "order-row", width: w, spacing: 8, align: "center" });
+      const text = `${o.want.n} ${o.want.res === "food" ? "🌾" : "🪵"} → ${o.reward} 🪙`;
+      const deliverBtn = (): void => button({ id: `deliver-${o.id}`, text: T("Deliver"), name: `${T("Deliver")} ${o.want.n} ${T(o.want.res)}`, style: "btn-small", disabled: !can, act: () => fulfill(o.id), quiet: true, tip: can ? T("Fulfil this order") : T("Not enough goods yet") });
+      const fits = textWidth(text, "order-text") + textWidth(T("{n}d", { n: left }), "exp") + buttonWidth(T("Deliver"), "btn-small") + 16 + 20 <= w;
+      if (fits) {
+        ui.row(`order-${o.id}`, () => {
+          ui.style("order-text").label(text);
+          ui.spacer();
+          ui.style("exp").label(T("{n}d", { n: left }));
+          deliverBtn();
+        }, { style: "order-row", width: w, spacing: 8, align: "center" });
+      } else {
+        // a narrow rail (phone held sideways): the order over its Deliver button
+        ui.column(`order-${o.id}`, () => {
+          ui.row(`order-${o.id}-top`, () => { ui.style("order-text").label(text); ui.spacer(); ui.style("exp").label(T("{n}d", { n: left })); }, { width: w - 20, align: "center" });
+          deliverBtn();
+        }, { style: "order-row", width: w, spacing: 6 });
+      }
     }
   }, { spacing: 6, width: w });
   ui.spacer(0.0001);

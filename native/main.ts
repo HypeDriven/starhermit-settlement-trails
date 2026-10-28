@@ -100,8 +100,10 @@ export function toast(text: string, err = false): void {
   announce(text);
 }
 const pending: (() => void)[] = [];
-/** A widget's press, run once the frame's UI is built (state changes mid-build would break later widgets). */
-export function later(fn: () => void): void { pending.push(fn); }
+let uiPressed = false;
+/** A widget's press, run once the frame's UI is built (state changes mid-build would break later widgets);
+ * the press (or tap) that activated it is the widget's, not the board's. */
+export function later(fn: () => void): void { pending.push(fn); uiPressed = true; }
 export function sound(name: audio.Sfx): void { audio.play(name); }
 export function theme(c: Content) { return Contents.THEMES[c.theme] ?? Contents.THEMES.meadow!; }
 export function profileName(): string { return platform.signedIn() ? platform.displayName() || T("Player") : T("Guest"); }
@@ -702,7 +704,8 @@ function pointerInput(wasPlaying: boolean): void {
     pressPending = false;
     if (ui.pointerOver() || !wasPlaying) pressConsumed = true;
   }
-  const list = taps.splice(0);
+  const list = uiPressed ? (taps.length = 0, []) : taps.splice(0);
+  uiPressed = false;
   const h = hoverAt;
   hoverAt = null;
   if (!wasPlaying || !playing()) return;

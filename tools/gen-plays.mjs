@@ -14,21 +14,11 @@ import * as R from '../js/rules.js';
 import * as C from '../js/content.js';
 
 const OUT = new URL('../tests/native/', import.meta.url).pathname;
-const DAY_LINES = { 1: 300, 2: 150, 3: 72 };
 
-/** One stage played by the bot. `input`: 'keys' (digits + Enter) or 'touch' (toolbox and tile touches). */
-export function playStage(def, lines, { input = 'keys', deliver = 'click', label = def.id, drawer = false } = {}) {
+/** The bot's plan for a stage, day by day: [{ tick, moves: [{ a, before }] }] and the final state (lessons: their placement steps first). */
+export function planStage(def, label = def.id) {
   const content = C.materialize(def);
   let st = R.createGame(content);
-  const tools = ['inspect', ...R.BUILD_ORDER.filter((t) => st.mechanics.includes(t)), 'demolish'];
-  let cursor = { ...content.hall };
-  let tool = 'inspect';
-  let speed = 1;
-  const days = st.goals.days;
-  lines.push(`# ${label}: ${def.name}`);
-  lines.push(`until 900 Day 0 / ${days}`);
-  lines.push('frames 10');
-  // Lessons: their placement steps first (a lesson only completes when each step is done in order), then the bot.
   const steps = content.steps || [];
   let si = 0, sc = 0;
   const lessonHit = (a) => {
@@ -52,10 +42,7 @@ export function playStage(def, lines, { input = 'keys', deliver = 'click', label
     pool.sort((p, q) => R.chebyshev(p.x, p.y, hall.x, hall.y) - R.chebyshev(q.x, q.y, hall.x, hall.y) || p.y - q.y || p.x - q.x);
     return { type: 'place', building: type, x: pool[0].x, y: pool[0].y };
   };
-  const checkGoal = (s) => {
-    const step = steps[si];
-    if (step && step.require.type === 'goal' && step.require.population && R.totalPopulation(s) >= step.require.population) si++;
-  };
+  const days = [];
   let guard = 0;
   while (st.status === 'active' && guard++ < 200) {
     const moves = [];
@@ -67,10 +54,32 @@ export function playStage(def, lines, { input = 'keys', deliver = 'click', label
       s2 = r.state;
       lessonHit(a);
     }
-    if (st.tick > 0) lines.push(`until 1200 Day ${st.tick} / ${days}`);
+    days.push({ tick: st.tick, moves });
+    st = s2;
+    if (st.status !== 'active') break;
+    st = R.advanceDay(st);
+    const step = steps[si];
+    if (step && step.require.type === 'goal' && step.require.population && R.totalPopulation(st) >= step.require.population) si++;
+  }
+  if (st.status !== 'won') throw new Error(`${label}: the bot did not win (${st.status} at day ${st.tick})`);
+  if (steps.length && si < steps.length) console.warn(`${label}: lesson steps left undone (${si}/${steps.length})`);
+  return { content, days, state: st, tools: ['inspect', ...R.BUILD_ORDER.filter((t) => content.mechanics.includes(t)), 'demolish'] };
+}
+
+/** One stage played by the bot. `input`: 'keys' (digits + Enter), 'toolbox' (tools by finger, Enter) or 'touch' (toolbox and tile touches). */
+export function playStage(def, lines, { input = 'keys', deliver = 'click', label = def.id, drawer = false } = {}) {
+  const { content, days: plan, state, tools } = planStage(def, label);
+  let cursor = { ...content.hall };
+  let tool = 'inspect';
+  let speed = 1;
+  const days = content.goals.days;
+  lines.push(`# ${label}: ${def.name}`);
+  lines.push(`until 900 Day 0 / ${days}`);
+  lines.push('frames 10');
+  for (const { tick, moves } of plan) {
+    if (tick > 0) lines.push(`until 1200 Day ${tick} / ${days}`);
     const want = moves.length ? 1 : 3;
-    const before = lines.length;
-    while (speed !== want && st.tick > 0) { lines.push('key Space 1'); speed = speed % 3 + 1; }
+    while (speed !== want && tick > 0) { lines.push('key Space 1'); speed = speed % 3 + 1; }
     for (const { a, before: sb } of moves) {
       if (a.type === 'fulfill') {
         const o = sb.orders.find((x) => x.id === a.orderId);
@@ -96,18 +105,10 @@ export function playStage(def, lines, { input = 'keys', deliver = 'click', label
       if (input === 'touch') { lines.push(`touch Cursor: Tile ${a.x},${a.y},`); lines.push('frames 3'); }
       else lines.push('key Enter 1');
     }
-    const used = lines.length - before;
-    if (used * 2 > DAY_LINES[speed] - (st.tick === 0 ? -100 : 20)) console.warn(`${label} day ${st.tick}: ${used} lines may not fit a day`);
-    st = s2;
-    if (st.status !== 'active') break;
-    st = R.advanceDay(st);
-    checkGoal(st);
   }
-  if (steps.length && si < steps.length) console.warn(`${label}: lesson steps left undone (${si}/${steps.length})`);
-  if (st.status !== 'won') throw new Error(`${label}: the bot did not win (${st.status} at day ${st.tick})`);
   lines.push('until 600 Charter fulfilled!');
   lines.push('frames 10');
-  return st;
+  return state;
 }
 const TOOL_NAMES = { road: 'Road', house: 'House', farm: 'Farm', lumber: 'Lumber Hut', well: 'Well', market: 'Market', demolish: 'Demolish', inspect: 'Inspect' };
 const toolLabel = (t) => `${TOOL_NAMES[t]} (`.replace('Demolish (', 'Demolish,').replace('Inspect (', 'Inspect,');
