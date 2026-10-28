@@ -157,3 +157,11 @@ Fixes are surgical and confined to `server.js` and `js/rules.js`.
   confirming a clean WebGL boot.
 - **Durability of boards**: `server.js` keeps boards in a process-local `Map`, so nothing about
   restart behaviour or concurrent writers could be assessed.
+
+## Engine port 2026-10-28 (StarHermit engine 1.20.1, minor 20)
+
+- The browser client was replaced by the engine client (native/*.ts); see spec.md.
+- Fixed on the way: Restart / Next stage after "Resume saved settlement" re-materialized the
+  already materialized content and crashed (also in the browser build); the HUD happiness chip
+  never updated (stayed "–"), it now shows the homes' average happiness.
+- Pointer/touch presses that activate a widget never reach the board.

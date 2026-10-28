@@ -1,50 +1,36 @@
 # Settlement Trails
 
-A cozy low-poly settlement builder for desktop and mobile browsers. Place homes,
-roads, wells, farms, lumber huts and markets; keep residents happy; fulfil trade
-orders before the charter expires.
+A cozy low-poly settlement builder: place homes, roads, wells, farms, lumber
+huts and markets; keep residents happy; fulfil trade orders before the
+charter expires. A StarHermit engine script game (engine 1.20.1, minor 20),
+played natively by the StarHermit client and in browsers by the engine's web
+runtime. See `spec.md`.
 
 ## Run
 
 ```
-node server.js     # serves on http://localhost:8080 (PORT env to change)
+starhermit .            # the StarHermit runtime (STARHERMIT=~/sh/runtime/1.20.1/…/starhermit)
+npm run package         # writes the web loader index.html + starhermit-files.json (after every change)
 ```
-
-No build step, no runtime dependencies beyond the vendored Three.js
-(`vendor/three.module.js`). Everything else is hand-rolled ES modules.
 
 ## Test
 
 ```
-npm test           # rules engine + content validation + session/replay tests
+npm test                # rules, session, saves, i18n, then the native checks and play scripts
+npm run test:browser    # the packaged loader in Chrome on the GPU (desktop, phone, landscape)
 ```
-
-The content tests prove every shipped stage (44 journey stages, 5 lessons,
-4 challenges, sampled daily seeds) is solvable by a greedy bot playing through
-the same public rules API players use.
 
 ## Layout
 
-- `js/rules.js` — pure deterministic rules engine (no DOM/render imports)
-- `js/content.js` — versioned stages, tutorials, daily generator, validator bot
-- `js/session.js` — command dispatch, undo, snapshots, replay envelopes
-- `js/render.js` — Three.js scene (never mutates rules state)
-- `js/ui.js` — semantic HTML shell, HUD, overlays, accessibility mirrors
-- `js/audio.js` — WebAudio procedural sound, four independent buses
-- `js/platform.js` — StarHermit host adapter with offline fallback
-- `js/store.js` — versioned, checksummed local persistence
-- `score-script.js` — StarHermit platform script: posts finished rounds to the `high-score` board
-- `server.js` — local dev server: server time, replay-validated local scores
-- `starhermit.txt` — distribution manifest
+- `js/rules.js`, `js/content.js`, `js/session.js`, `js/rng.js` — the pure rules, content and session (shared with the tests)
+- `js/store.js` — the save documents and their merge; `js/i18n.js`, `js/locales/`, `js/names.js`, `js/sh-strings.js` — localization
+- `native/*.ts` — the engine client (screens, scene, audio, platform, quality, style)
+- `tools/` — `ui-style.css` → `assets/ui-style.json` (`npm run css`), `bake-textures.mjs`, `gen-plays.mjs`, `browser-play.mjs`, `package-web.mjs`
+- `score-script.js` — the platform script: range-checks posted totals for the `high-score` board
+- `server.js` — local dev server (not part of the package)
 
 ## Modes
 
-Learn (5 interactive lessons), Journey (44 stages with mastery gates), Daily
-(shared UTC seed), Practice (3 difficulties, undo, unranked), Challenges
-(restricted tools/limits), Score chase (local + hosted boards with replay
-validation).
-
-## Deep links / automation
-
-`?auto=journey:3`, `?auto=daily`, `?auto=practice:hard`, `?auto=challenge:speedrun`
-jump straight into a game; append `&bot=1` for self-play (used by smoke tests).
+Learn (5 lessons), Journey (44 stages with mastery stages), Daily (shared UTC
+seed), Practice (3 difficulties, undo, unranked), Challenges (restricted
+tools and limits).
