@@ -24,29 +24,37 @@ function unwrap(raw) {
   } catch { return null; }
 }
 
-function storageAvailable() {
-  try {
+// The storage the docs live in: browser localStorage when there is one, else an in-memory map.
+// The engine client (native/platform.ts) swaps in its own (the engine save holds every doc).
+const memoryFallback = new Map();
+const memoryKV = {
+  getItem: (k) => (memoryFallback.has(k) ? memoryFallback.get(k) : null),
+  setItem: (k, v) => { memoryFallback.set(k, String(v)); },
+  removeItem: (k) => { memoryFallback.delete(k); },
+};
+let kv = memoryKV;
+try {
+  if (typeof localStorage !== 'undefined') {
     const k = key('__probe');
     localStorage.setItem(k, '1'); localStorage.removeItem(k);
-    return true;
-  } catch { return false; }
-}
+    kv = localStorage;
+  }
+} catch { kv = memoryKV; }
+/** Replace the storage backend ({ getItem, setItem, removeItem }). */
+export function setBackend(backend) { kv = backend || memoryKV; }
 
-const memoryFallback = new Map(); // private browsing etc.
-const hasLS = typeof localStorage !== 'undefined' && storageAvailable();
+const clone = (v) => JSON.parse(JSON.stringify(v));
 
 function readDoc(name, defaults) {
-  const raw = hasLS ? localStorage.getItem(key(name)) : memoryFallback.get(key(name));
-  if (!raw) return structuredClone(defaults);
+  const raw = kv.getItem(key(name));
+  if (!raw) return clone(defaults);
   const body = unwrap(raw);
-  if (!body) return structuredClone(defaults);
-  return { ...structuredClone(defaults), ...body.data };
+  if (!body) return clone(defaults);
+  return { ...clone(defaults), ...body.data };
 }
 
 function writeDoc(name, doc) {
-  const raw = JSON.stringify(wrap(doc));
-  if (hasLS) localStorage.setItem(key(name), raw);
-  else memoryFallback.set(key(name), raw);
+  kv.setItem(key(name), JSON.stringify(wrap(doc)));
 }
 
 // ---- Settings ------------------------------------------------------------------
@@ -179,8 +187,8 @@ const boardKey = (e) => `${e.board}|${e.sessionId}|${e.score}|${e.when}`;
  * device's (the cloud's autosave only when this device has none).
  */
 export function mergeSaveDocs(local, remote) {
-  const lp = { ...structuredClone(DEFAULT_PROGRESS), ...(local.progress || {}) };
-  const rp = { ...structuredClone(DEFAULT_PROGRESS), ...(remote.progress || {}) };
+  const lp = { ...clone(DEFAULT_PROGRESS), ...(local.progress || {}) };
+  const rp = { ...clone(DEFAULT_PROGRESS), ...(remote.progress || {}) };
   const stars = { ...(rp.journeyStars || {}) };
   for (const [id, n] of Object.entries(lp.journeyStars || {})) stars[id] = Math.max(n0(stars[id]), n0(n));
   const totals = {};
@@ -259,12 +267,11 @@ export function importSaveDoc(doc) {
 // ---- Autosave ---------------------------------------------------------------------------
 export function saveAutosave(snap) { writeDoc('autosave', snap); }
 export function loadAutosave() {
-  const raw = hasLS ? localStorage.getItem(key('autosave')) : memoryFallback.get(key('autosave'));
+  const raw = kv.getItem(key('autosave'));
   if (!raw) return null;
   const body = unwrap(raw);
   return body ? body.data : null;
 }
 export function clearAutosave() {
-  if (hasLS) localStorage.removeItem(key('autosave'));
-  else memoryFallback.delete(key('autosave'));
+  kv.removeItem(key('autosave'));
 }

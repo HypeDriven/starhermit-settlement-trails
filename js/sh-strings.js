@@ -1,7 +1,6 @@
 // sh-strings.js — localized strings for the StarHermit account controls
 // (sign-in, invite link, sign-out notice). Callers pass the game language
-// (i18n.js getLang()), like the Graphics panel.
-import { gfxLocale } from './gfx-strings.js';
+// (i18n.js getLang()).
 
 const EN = {
   signIn: 'Sign in with StarHermit',
@@ -77,5 +76,19 @@ export const SH_STRINGS = {
 };
 
 export function shStrings(tag) {
-  return SH_STRINGS[gfxLocale(tag)];
+  return SH_STRINGS[matchLocale(tag)];
+}
+
+/** The supported locale for a BCP 47 tag (en-GB for the UK English family, es-ES / es-419, fr-CA / fr-FR, …). */
+export function matchLocale(tag) {
+  const t = String(tag || 'en-US');
+  if (SH_STRINGS[t]) return t;
+  const [lang, region] = t.split('-');
+  if (lang === 'en') return /^(GB|IE|AU|NZ|ZA|IN)$/i.test(region || '') ? 'en-GB' : 'en-US';
+  if (lang === 'es') return /^ES$/i.test(region || '') ? 'es-ES' : 'es-419';
+  if (lang === 'fr') return /^CA$/i.test(region || '') ? 'fr-CA' : 'fr-FR';
+  if (lang === 'pt') return 'pt-BR';
+  if (lang === 'de') return 'de-DE';
+  if (lang === 'it') return 'it-IT';
+  return 'en-US';
 }

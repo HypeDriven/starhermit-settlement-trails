@@ -1,19 +1,34 @@
 name=Settlement Trails
 description=Build homes, roads, services, and production sites to meet residents' needs and fulfill trade orders.
-launch=index.html
 owner=2712e04e-461b-4d23-81ae-e40b429128a8
 server=score-script.js
 cover=cover.jpg
+
+# StarHermit engine script game: one package, played natively by the
+# StarHermit client and in browsers by the engine's web runtime. Browsers open
+# launch=index.html, the loader `npm run package` writes (it pins the engine
+# on wiki.starhermit.com by hash; never edit it). Re-run `npm run package`
+# after every change and commit index.html + starhermit-files.json.
+launch=index.html
+engine.api=1
+engine.entry=native/main.ts
+engine.version=1.20.1
+engine.minor=20
+engine.capabilities=platform,storage,clipboard
+
+# Keyboard controls (players rebind keys and pads in the runtime's Options).
+# The arrows move the build cursor, Enter builds with the current tool (or
+# inspects), 1–9 pick a tool (Inspect, the scenario's buildings in toolbox
+# order, Demolish), I inspects, X demolishes, Escape puts the tool down (then
+# pauses). The board is also played with the pointer or touch: pick a tool in
+# the toolbox, tap a tile; drag pans the map, the wheel or a pinch zooms.
+engine.group.up=Cursor
 control.up=ArrowUp+KeyW | Move cursor up
 control.down=ArrowDown+KeyS | Move cursor down
 control.left=ArrowLeft | Move cursor left
 control.right=ArrowRight | Move cursor right
 control.confirm=Enter+NumpadEnter | Build / inspect tile
-control.pause=Escape | Cancel / pause
-control.undo=KeyU | Undo
-control.hint=KeyH | Hint
-control.speed=Space | Change speed
-control.camera=KeyC | Reset camera
+engine.group.inspect=Tools
 control.inspect=KeyI | Inspect tool
 control.demolish=KeyX | Demolish tool
 control.tool1=Digit1+Numpad1 | Tool 1
@@ -25,3 +40,29 @@ control.tool6=Digit6+Numpad6 | Tool 6
 control.tool7=Digit7+Numpad7 | Tool 7
 control.tool8=Digit8+Numpad8 | Tool 8
 control.tool9=Digit9+Numpad9 | Tool 9
+control.toolprev=BracketLeft | Previous tool
+control.toolnext=BracketRight | Next tool
+engine.group.pause=Settlement
+control.pause=Escape | Cancel / pause
+control.undo=KeyU | Undo
+control.hint=KeyH | Hint
+control.speed=Space | Change speed
+control.camera=KeyC | Reset camera
+
+# Gamepad defaults (as the browser build's): the D-pad or left stick moves the
+# cursor, South builds / inspects, East puts the tool down (Inspect), Start
+# pauses, the shoulders cycle the tools; also West undoes, North hints, Select
+# changes the speed, the right stick press resets the camera.
+engine.gamepad.up=DpadUp+LeftStickUp
+engine.gamepad.down=DpadDown+LeftStickDown
+engine.gamepad.left=DpadLeft+LeftStickLeft
+engine.gamepad.right=DpadRight+LeftStickRight
+engine.gamepad.confirm=South
+engine.gamepad.inspect=East
+engine.gamepad.toolprev=LeftShoulder
+engine.gamepad.toolnext=RightShoulder
+engine.gamepad.pause=Start
+engine.gamepad.undo=West
+engine.gamepad.hint=North
+engine.gamepad.speed=Select
+engine.gamepad.camera=RightStickPress

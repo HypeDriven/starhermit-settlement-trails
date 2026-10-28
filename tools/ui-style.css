@@ -1,0 +1,158 @@
+/* Settlement Trails — the browser build's css/style.css rewritten class-based
+   for the engine's UI (`npm run css` converts it into assets/ui-style.json).
+   Element selectors, html[data-*] attributes and @media do not convert: every
+   widget names its classes, the breakpoints are layouts picked in
+   native/screens.ts, high contrast is a token set native/style.ts applies,
+   larger text is the runtime's text scale and reduced motion the runtime's
+   preference. */
+
+:root {
+  --bg: #1c2a22; --panel: #24352b; --panel-2: #2c4134; --ink: #f2ede0; --ink-dim: #b8c2ae;
+  --accent: #ffd54a; --accent-2: #7cfc7a; --danger: #ff6a5a; --accent-ink: #231a00;
+  --hover: #37503f; --line: rgba(255, 255, 255, 0.14);
+}
+
+* { box-sizing: border-box; }
+
+/* ------------------------------------------------------------- text */
+.text { color: var(--ink); font-size: 16px; }
+.dim { color: var(--ink-dim); font-size: 16px; }
+.small { color: var(--ink-dim); font-size: 14.4px; }
+.tiny { color: var(--ink-dim); font-size: 12px; }
+.h1 { color: var(--ink); font-size: 64px; font-weight: 700; letter-spacing: 1.3px; text-align: center; }
+.h1-accent { color: var(--accent); font-size: 64px; font-weight: 700; letter-spacing: 1.3px; text-align: center; }
+.h1-land { color: var(--ink); font-size: 30.4px; font-weight: 700; text-align: center; }
+.h1-land-accent { color: var(--accent); font-size: 30.4px; font-weight: 700; text-align: center; }
+.tagline { color: var(--ink-dim); font-size: 16px; text-align: center; }
+.h2 { color: var(--ink); font-size: 24px; font-weight: 700; }
+.h3 { color: var(--ink); font-size: 18.7px; font-weight: 700; }
+.h3-accent { color: var(--accent); font-size: 15.2px; font-weight: 700; }
+.lesson-h { color: var(--accent); font-size: 18.7px; font-weight: 700; }
+.rail-title { color: var(--accent); font-size: 16.8px; font-weight: 700; }
+.rail-sub { color: var(--ink-dim); font-size: 13.6px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.obj { color: var(--ink); font-size: 14.4px; }
+.obj-done { color: var(--accent-2); font-size: 14.4px; }
+.order-text { color: var(--ink); font-size: 14.4px; }
+.exp { color: var(--ink-dim); font-size: 12.5px; }
+.log { color: var(--ink-dim); font-size: 13.1px; }
+.log-first { color: var(--ink); font-size: 13.1px; }
+.stars { color: var(--accent); font-size: 16px; }
+.mastery { color: #ff9a3c; font-size: 12px; font-weight: 700; }
+.countdown { color: var(--accent); font-size: 144px; font-weight: 900; text-align: center; }
+.toast-text { color: var(--ink); font-size: 16px; }
+.res-v { color: var(--ink); font-size: 16px; font-weight: 700; }
+.res-v-sm { color: var(--ink); font-size: 13.1px; font-weight: 700; }
+.day { color: var(--ink); font-size: 16px; font-weight: 700; }
+.pill-text { color: var(--ink); font-size: 12px; }
+.tool-ico { color: var(--ink); font-size: 20px; text-align: center; }
+.tool-nm { color: var(--ink); font-size: 11.5px; text-align: center; }
+.tool-cost { color: var(--ink-dim); font-size: 10.9px; text-align: center; }
+.score-k { color: var(--ink); font-size: 16px; }
+.score-v { color: var(--ink); font-size: 16px; font-weight: 700; text-align: end; }
+.total-k { color: var(--accent); font-size: 19.2px; font-weight: 800; }
+.total-v { color: var(--accent); font-size: 19.2px; font-weight: 800; text-align: end; }
+.me { color: var(--accent); font-size: 16px; font-weight: 700; }
+.ach-text { color: var(--ink); font-size: 13.6px; }
+.wrap { color: var(--ink); font-size: 16px; text-align: center; }
+.wrap-ink { color: var(--accent-ink); font-size: 16px; font-weight: 700; text-align: center; }
+.kbd { color: var(--ink); font-size: 13.6px; }
+
+/* ------------------------------------------------------------- surfaces */
+.page { background: var(--bg); border-radius: 0; }
+.title-bg { background: radial-gradient(ellipse farthest-corner at 50% 120%, #3c5a3f 0%, rgba(60, 90, 63, 0) 38%), linear-gradient(#16211a, #1c2a22); border-radius: 0; }
+.hud { background: linear-gradient(rgba(10, 16, 12, 0.85), rgba(10, 16, 12, 0)); border-radius: 0; }
+.res { background: rgba(20, 30, 22, 0.8); border-radius: 8px; padding: 3px 8px; }
+.res-sm { background: rgba(20, 30, 22, 0.8); border-radius: 8px; padding: 2px 6px; }
+.day-pill { background: rgba(20, 30, 22, 0.8); border-radius: 99px; padding: 4px 13px; }
+.pill { background: rgba(255, 255, 255, 0.12); border-radius: 99px; padding: 2px 8px; }
+.rail { background: rgba(22, 33, 25, 0.88); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 13px 16px; }
+.rail-open { background: rgba(22, 33, 25, 0.97); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 13px 16px; }
+.toolbox { background: rgba(22, 33, 25, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; padding: 7px; }
+.tutorial { background: var(--panel); border: 2px solid var(--accent); border-radius: 12px; padding: 11px 18px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
+.toast { background: rgba(20, 30, 22, 0.95); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 16px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
+.toast-err { background: rgba(20, 30, 22, 0.95); border: 1px solid var(--danger); border-radius: 10px; padding: 8px 16px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
+.panel { background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 20px 24px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
+.setup-card { background: var(--panel-2); border-radius: 10px; padding: 16px; }
+.rule-card { background: var(--panel-2); border-radius: 10px; padding: 11px 14px; }
+.order-row { background: var(--panel-2); border-radius: 8px; padding: 7px 10px; }
+.score-row { border-bottom: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0; padding: 3px 0; }
+.total-row { border-top: 2px solid var(--accent); border-radius: 0; padding: 6px 0 0 0; }
+.ach-badge { background: linear-gradient(135deg, #4a3800, #7a5d10); border: 1px solid var(--accent); border-radius: 8px; padding: 5px 10px; }
+.set-group { border-top: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0; padding: 10px 0 0 0; }
+.scrim { background: rgba(8, 14, 10, 0.4); border-radius: 0; }
+
+/* ------------------------------------------------------------- buttons */
+.btn {
+  min-height: 44px; min-width: 44px; padding: 10px 16px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.btn:hover { background: var(--hover); }
+.btn:disabled { opacity: 0.45; }
+.btn.active { background: var(--accent); border-color: rgba(0, 0, 0, 0); color: var(--accent-ink); font-weight: 700; }
+.btn-primary {
+  min-height: 44px; min-width: 44px; padding: 10px 16px;
+  background: var(--accent); border: 1px solid rgba(0, 0, 0, 0); border-radius: 10px;
+  color: var(--accent-ink); font-size: 16px; font-weight: 700; text-align: center;
+}
+.btn-primary:hover { background: #ffe27a; }
+.btn-primary:disabled { opacity: 0.45; }
+.btn-big {
+  min-height: 44px; min-width: 44px; padding: 14px 32px;
+  background: var(--accent); border: 1px solid rgba(0, 0, 0, 0); border-radius: 10px;
+  color: var(--accent-ink); font-size: 20.8px; font-weight: 700; text-align: center;
+}
+.btn-big:hover { background: #ffe27a; }
+.btn-small {
+  min-height: 40px; min-width: 44px; padding: 6px 11px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.btn-small:hover { background: var(--hover); }
+.btn-small:disabled { opacity: 0.45; }
+.btn-icon {
+  min-height: 44px; min-width: 44px; padding: 6px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.btn-icon:hover { background: var(--hover); }
+.btn-ghost {
+  min-height: 44px; min-width: 44px; padding: 10px 16px;
+  background: rgba(0, 0, 0, 0); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.btn-ghost:hover { background: var(--hover); }
+.btn-danger {
+  min-height: 44px; min-width: 44px; padding: 10px 16px;
+  background: var(--panel-2); border: 1px solid var(--danger); border-radius: 10px;
+  color: var(--danger); font-size: 16px; text-align: center;
+}
+.btn-danger:hover { background: var(--hover); }
+.rail-toggle {
+  min-height: 44px; min-width: 44px; padding: 6px;
+  background: rgba(22, 33, 25, 0.9); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.rail-toggle:hover { background: var(--hover); }
+.tool {
+  min-width: 64px; min-height: 56px; padding: 5px 6px;
+  background: var(--panel-2); border: 2px solid rgba(0, 0, 0, 0); border-radius: 10px;
+  color: var(--ink); font-size: 11.5px; text-align: center;
+}
+.tool:hover { background: var(--hover); }
+.tool:disabled { opacity: 0.45; }
+.tool.active { background: #3d5342; border-color: var(--accent); }
+.stage-card {
+  min-height: 44px; padding: 11px;
+  background: var(--panel-2); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
+  color: var(--ink); font-size: 16px; text-align: start;
+}
+.stage-card:hover { background: var(--hover); }
+.stage-card:disabled { opacity: 0.4; }
+.tab {
+  min-height: 40px; padding: 6px 14px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); font-size: 16px; text-align: center;
+}
+.tab:hover { background: var(--hover); }
+.tab.active { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
