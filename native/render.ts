@@ -13,9 +13,8 @@
 // camera (pan, zoom, reset; fitted to narrow windows). Rendering reads rules
 // state and never writes it.
 //
-// From three.js r160 (physically based lights): colours as written, the
-// hemisphere and key light intensities ÷ π (the engine takes three's legacy
-// units). render.js's `new RoomEnvironment(renderer)` (the bright room) is
+// From three.js r160 (physically based lights): colours and intensities as
+// written; the key light's shadow box fitted to the board as render.js did. render.js's `new RoomEnvironment(renderer)` (the bright room) is
 // kept as written; every standard material carries it as its own envMap at
 // its old envMapIntensity, as r160 multiplied scene.environment by it. The
 // old composer (RenderPass in half floats → GTAO → UnrealBloom 0.45 / 0.4 /
@@ -29,7 +28,7 @@ import {
   DirectionalLight, DodecahedronGeometry, Euler, Fog, Group, HemisphereLight, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, PMREMGenerator, Points,
   PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment, SRGBColorSpace, Sprite, SpriteMaterial, TextureLoader,
-  Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type Texture,
+  Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type OrthographicCamera, type Texture,
 } from "starhermit:scene";
 import { OffscreenCanvas } from "starhermit:canvas";
 import type { Content, HouseInfo, State, Theme } from "./game.ts";
@@ -71,12 +70,12 @@ class Stream {
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 const camera = new PerspectiveCamera(38, 1, 0.1, 200);
-const hemi = new HemisphereLight(0xcfe8ff, 0x6a7a5a, 0.9 / PI);
-const keyLight = new DirectionalLight(0xfff2dd, 1.6 / PI);
+const hemi = new HemisphereLight(0xcfe8ff, 0x6a7a5a, 0.9);
+const keyLight = new DirectionalLight(0xfff2dd, 1.6);
 keyLight.position.set(8, 14, 6);
 keyLight.shadow.mapSize = 1024;
 keyLight.shadow.bias = -0.0004;
-keyLight.shadow.normalBias = 1; // three's 0.02 world units; the engine's normal bias is in texels
+keyLight.shadow.normalBias = 0.02;
 scene.add(hemi, keyLight, keyLight.target);
 
 const tileGroup = new Group();
@@ -237,12 +236,12 @@ function mat(color: number, o: MatOpts = {}): MeshLambertMaterial | MeshStandard
 /** render.js _applyDetailLights: IBL supplies part of the fill when detailed, so the hemisphere backs off. */
 function applyDetailLights(): void {
   if (detailed()) {
-    hemi.intensity = 0.5 / PI;
-    keyLight.intensity = 1.85 / PI;
+    hemi.intensity = 0.5;
+    keyLight.intensity = 1.85;
     renderer.toneMappingExposure = 0.95;
   } else {
-    hemi.intensity = 0.9 / PI;
-    keyLight.intensity = 1.6 / PI;
+    hemi.intensity = 0.9;
+    keyLight.intensity = 1.6;
     renderer.toneMappingExposure = 1.05;
   }
 }
@@ -442,6 +441,7 @@ export function load(c: Content, th: Theme): void {
 
   windowGlow = th.ambient === "night" ? 2.6 : 1.4;
   boardRadius = Math.hypot(w, h) * TILE / 2 + 0.6;
+  fitShadow(boardRadius);
   camTarget.set(0, 0, 0);
   camTargetGoal.set(0, 0, 0);
   camDist = Math.max(w, h) * 1.25 + 5;
@@ -450,6 +450,17 @@ export function load(c: Content, th: Theme): void {
   applyCamera(1);
 }
 let boardRadius = 8;
+/** render.js _fitShadow: the key light's orthographic shadow box fitted tightly around the board. */
+function fitShadow(radius: number): void {
+  const dist = radius * 2 + 4;
+  keyLight.position.set(8, 14, 6).normalize().multiplyScalar(dist);
+  keyLight.target.position.set(0, 0, 0);
+  const cam = keyLight.shadow.camera as OrthographicCamera;
+  cam.left = -radius; cam.right = radius; cam.top = radius; cam.bottom = -radius;
+  cam.near = dist - radius - 2; cam.far = dist + radius + 2;
+  cam.updateProjectionMatrix();
+}
+fitShadow(12);
 
 function syncWater(): void {
   if (!waterInst) return;
@@ -846,7 +857,6 @@ function applyCamera(snap = 0): void {
     camera.position.y += (Math.random() - 0.5) * s;
   }
   camera.lookAt(camTarget);
-  keyLight.shadow.distance = dist + boardRadius + 4;
 }
 
 // ---------------------------------------------------------------- picking
@@ -887,7 +897,8 @@ export function applyLook(next: Look): void {
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
   };
   // High threshold: only window glow, water glints and bright highlights bloom.
-  renderer.bloom = next.bloom ? { strength: 0.45, radius: 0.4, threshold: 0.9, resolution: b.bloomRes } : null;
+  // r160 page: UnrealBloomPass 0.45 → 0.45² at minor 29 (r185 bloom).
+  renderer.bloom = next.bloom ? { strength: 0.45 * 0.45, radius: 0.4, threshold: 0.9, resolution: b.bloomRes } : null;
   // render.js GradeShader after the output (display space): a 0.22-weight smoothstep S-curve (slope 1.11 at mid
   // grey), +10 % saturation, cool shadows / warm highlights split by a 0.2–0.8 smoothstep of luma, the 0.2
   // vignette from 0.38 to 0.8 (vertical distance × 0.85).
