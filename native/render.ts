@@ -379,7 +379,7 @@ export function load(c: Content, th: Theme): void {
   const b = look!.budget;
   if (detailed()) {
     withTexture(`assets/textures/ground-${b.texture}.png`, (t) => { t.colorSpace = SRGBColorSpace; t.wrapS = t.wrapT = RepeatWrapping; t.anisotropy = 4; },
-      (t) => { if (landMesh && landMesh.material === landMat) { (landMat as MeshStandardMaterial).map = t; } });
+      (t) => { (landMat as MeshStandardMaterial).map = t; });
   }
   const wm = detailed()
     ? new MeshStandardMaterial({ color: th.water, roughness: 0.2, metalness: 0, envMap: environment(), envMapIntensity: 0.45, transparent: true, opacity: 0.9 })
