@@ -158,7 +158,7 @@ Fixes are surgical and confined to `server.js` and `js/rules.js`.
 - **Durability of boards**: `server.js` keeps boards in a process-local `Map`, so nothing about
   restart behaviour or concurrent writers could be assessed.
 
-## Engine port 2026-10-28 (StarHermit engine 1.22.0, minor 20)
+## Engine port 2026-10-28 (StarHermit engine 1.23.0, minor 20)
 
 - The browser client was replaced by the engine client (native/*.ts); see spec.md.
 - Fixed on the way: Restart / Next stage after "Resume saved settlement" re-materialized the
