@@ -5,7 +5,7 @@
 **Genre:** Settlement simulation  
 **Players:** 1 player; asynchronous score comparison on leaderboards  
 **Targets:** the StarHermit client (native) and browsers (the StarHermit engine's web runtime), desktop and mobile, landscape and portrait  
-**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.27.0`, `engine.minor=29`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
+**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.28.0`, `engine.minor=30`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
 
 ## 1. Product vision
 
@@ -116,7 +116,7 @@ Every string ships in **en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR 
 
 A tabletop board of instanced land tiles (hills raised 0.45; per-tile shade jitter; forests a darker grass), instanced translucent water tiles over an opaque riverbed (bob and drifting normal map when detailed), instanced cone forests with per-tree tints that vanish when a tile is cleared, flat-shaded rocks, low-poly clouds high above (culled near the camera), buildings built from parts and merged into one vertex-coloured mesh per material kind (hall with banner and plinth, road with stripe and kerbs, house with door, windows and chimney, farm, lumber hut with logs, well with water, market with awning), warm emissive windows (brighter on dusk boards), "!" sprites over unhappy homes, the hover ring, the corner cursor, the ghost preview, pooled burst particles and chimney smoke, pop-in animations and camera shake. Five themes (meadow, riverlands, highland, autumn, dusk) colour sky, fog, ground, forest, water and rock. The camera orbits at a fixed pitch, eases to its targets, fits narrow windows (and widens the FOV in portrait), and fog follows its distance.
 
-From three.js r160: colours as written; hemisphere and key light intensities as written, the key light's shadow box fitted to the board as render.js did, bloom strength squared for r185; `new RoomEnvironment(renderer)` as the old page called it, PMREM-filtered, set as each standard material's own envMap at its old envMapIntensity (scene.environment ignores per-material intensities at minor 20); ACES tone mapping at exposure 1.05 (0.95 detailed); the sky gradient pre-compensated for the tone curve as before. The procedural ground grain and water normals are baked by `tools/bake-textures.mjs` (the old noise code) into `assets/textures/`.
+From three.js r160: colours as written; hemisphere and key light intensities as written, the key light's shadow box fitted to the board as render.js did, bloom on the engine's r160 model at the page strength; `new RoomEnvironment(renderer)` as the old page called it, PMREM-filtered, set as each standard material's own envMap at its old envMapIntensity (scene.environment ignores per-material intensities at minor 20); ACES tone mapping at exposure 1.05 (0.95 detailed); the sky gradient pre-compensated for the tone curve as before. The procedural ground grain and water normals are baked by `tools/bake-textures.mjs` (the old noise code) into `assets/textures/`.
 
 ### Graphics per quality tier (native/quality.ts)
 

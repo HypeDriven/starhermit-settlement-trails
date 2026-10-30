@@ -897,13 +897,13 @@ export function applyLook(next: Look): void {
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
   };
   // High threshold: only window glow, water glints and bright highlights bloom.
-  // r160 page: UnrealBloomPass 0.45 → 0.45² at minor 29 (r185 bloom).
-  renderer.bloom = next.bloom ? { strength: 0.45 * 0.45, radius: 0.4, threshold: 0.9, resolution: b.bloomRes } : null;
-  // render.js GradeShader after the output (display space): a 0.22-weight smoothstep S-curve (slope 1.11 at mid
-  // grey), +10 % saturation, cool shadows / warm highlights split by a 0.2–0.8 smoothstep of luma, the 0.2
+  // r160 page: the engine's r160 bloom model at the page's strength (engine.minor 30).
+  renderer.bloom = next.bloom ? { model: "r160", strength: 0.45, radius: 0.4, threshold: 0.9, resolution: b.bloomRes } : null;
+  // render.js GradeShader after the output (display space): a 0.22-weight smoothstep S-curve (contrastCurve "s"),
+  // +10 % saturation, cool shadows / warm highlights split by a 0.2–0.8 smoothstep of luma, the 0.2
   // vignette from 0.38 to 0.8 (vertical distance × 0.85).
   renderer.grade = next.grade ? {
-    space: "display", contrast: 0.11, saturation: 1.1, shadows: [0.97, 0.99, 1.04], highlights: [1.03, 1.0, 0.96], split: [0.2, 0.8],
+    space: "display", contrastCurve: "s", contrast: 0.22, saturation: 1.1, shadows: [0.97, 0.99, 1.04], highlights: [1.03, 1.0, 0.96], split: [0.2, 0.8],
     vignette: { amount: 0.2, inner: 0.38, outer: 0.8, scale: [1, 0.85] },
   } : null;
   renderer.antialias = next.antialias;
