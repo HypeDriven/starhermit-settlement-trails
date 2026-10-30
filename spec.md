@@ -5,7 +5,7 @@
 **Genre:** Settlement simulation  
 **Players:** 1 player; asynchronous score comparison on leaderboards  
 **Targets:** the StarHermit client (native) and browsers (the StarHermit engine's web runtime), desktop and mobile, landscape and portrait  
-**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.29.0`, `engine.minor=31`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
+**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.30.0`, `engine.minor=32`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
 
 ## 1. Product vision
 
