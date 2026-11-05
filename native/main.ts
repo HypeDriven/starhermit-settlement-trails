@@ -651,7 +651,7 @@ onGesture!((e) => {
   const sc = frame().scale;
   switch (e.type) {
     case "tap": taps.push({ x: e.x, y: e.y }); break;
-    case "dragStart": dragging = true; if (playing()) render.panBy(e.dx / sc, e.dy / sc); break;
+    case "dragStart": dragging = true; break; // its dx, dy are from the press: the board must not jump by the slop
     case "drag": if (playing()) render.panBy(e.dx / sc, e.dy / sc); break;
     case "dragEnd": dragging = false; break;
     case "pinchStart": pinchAt = 1; break;

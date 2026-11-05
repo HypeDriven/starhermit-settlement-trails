@@ -23,7 +23,7 @@
     "native/audio.ts": {"sha256": "c08dd60aac4c2b79c2f14a8b0af9b56742e247f6032c71bde356e348f90e3796", "size": 9346},
     "native/game.ts": {"sha256": "c0a77476bdbfbf5b1b66a8c058e7a34cf5974853ad1f12201b88b699df52880b", "size": 8114},
     "native/i18n.ts": {"sha256": "f58bcb2732467b4fa5447b39f0b856b3da165d6d2f15228fa7ffb82375fbb2fb", "size": 1801},
-    "native/main.ts": {"sha256": "86acbdb5fddd9ecd187916ac39945edd44a12fb646f211c4e071bc387e282a69", "size": 31916},
+    "native/main.ts": {"sha256": "c23cc2f37581b39d5f11278fb4714e4c9d62f07cbc2b6a5522d202f80b72cf5e", "size": 31935},
     "native/platform.ts": {"sha256": "7da0937274d914b9fef4e08b5de87776ec6fd69572053327ef4a2449f5baf3c8", "size": 10709},
     "native/quality.ts": {"sha256": "65fdb75e759d1543220f1d6d8c7b55f7b8658a063fbeed23dcc2cd704ebed095", "size": 3804},
     "native/render.ts": {"sha256": "baac9746c53dba1cf877c4154332484ee71109f235d60998400ae767672f90e6", "size": 44786},
