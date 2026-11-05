@@ -1,0 +1,47 @@
+# Graphics-level bench: lesson 5 (Markets & Trade) with the settlement built, 600 frames of the running day (smoke, water, clouds).
+until 600 Daily Trail
+frames 30
+click =Learn
+until 300 Markets & Trade
+frames 10
+click Markets & Trade
+frames 30
+# learn-5: Markets & Trade
+until 900 Day 0 / 36
+frames 10
+click Market (
+frames 3
+key ArrowUp 1
+key Enter 1
+click Farm (
+frames 3
+key ArrowUp 1
+key ArrowUp 1
+key Enter 1
+click Lumber Hut (
+frames 3
+key ArrowLeft 1
+key ArrowLeft 1
+key ArrowDown 1
+key ArrowDown 1
+key ArrowDown 1
+key Enter 1
+click House (
+frames 3
+key ArrowRight 1
+key Enter 1
+click Well (
+frames 3
+key ArrowUp 1
+key Enter 1
+click House (
+frames 3
+key ArrowRight 1
+key ArrowRight 1
+key ArrowDown 1
+key Enter 1
+until 1200 Day 1 / 36
+frames 120
+measure start
+frames 600
+measure stop

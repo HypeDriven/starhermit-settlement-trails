@@ -108,7 +108,7 @@ Layouts are picked by the window's logical size (window pixels ÷ the runtime's 
 
 ### Localization
 
-Every string ships in **en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR and it-IT** (`js/i18n.js`, `js/locales/`, English text as keys; account strings in `js/sh-strings.js`), in the runtime's interface language (`preferences().language`: Options › Language, else the account's preferred language, else the device's; the game's own Language setting is gone). Content and rule events keep their stable English text; `js/names.js` translates names, blurbs, buildings, rejections and events at display time. Strings draw through `T()` every frame, so a change shows at once without restarting the settlement.
+Every string ships in **en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR and it-IT** (`assets/strings.json` on the engine's strings, English text as keys; account lines are the engine's `starhermit.*`), in the runtime's interface language (`preferences().language`: Options › Language, else the account's preferred language, else the device's; the game's own Language setting is gone). Content and rule events keep their stable English text; `js/names.js` translates names, blurbs, buildings, rejections and events at display time. Strings draw through `T()` every frame, so a change shows at once without restarting the settlement.
 
 ## 4. Visual and audio design
 
@@ -120,16 +120,16 @@ From three.js r160: colours as written; hemisphere and key light intensities as 
 
 ### Graphics per quality tier (native/quality.ts)
 
-The runtime's Options choose the graphics level (Auto from the hardware, render scale, adaptive resolution, frame-rate limit and readout); the game maps the tier (`frame().quality`) onto the old presets and budgets (`js/gfx.js`), scaling the particle pool within the tier by the level (≤ 2×):
+The runtime's Options choose the graphics level (Auto from the hardware, render scale, adaptive resolution, frame-rate limit and readout); the engine's table (`levelSettings()`) gives shadows, AO, bloom, grade and anti-aliasing, and the game keys its art to the tier (`frame().quality`), scaling the particle pool within the tier by the level's particle budget (≤ 2×). At each tier's anchor level:
 
 | | Low | Balanced | High | Ultra |
 |---|---|---|---|---|
 | Shading | Lambert, flat sky | Standard + room reflections, detail | same | same |
-| Shadows | off | 1024² | 2048² | 4096² |
-| GTAO | off | off | on (8 samples, ½ res) | high (16, full res) |
-| Bloom (0.45 / 0.4 / threshold 0.9) | off | ½ res | ½ res | full res |
-| Grade (display space: S-curve, +10 % saturation, split toning, 0.2 vignette) | off | on | on | on |
-| Antialiasing | off | FXAA | SMAA | MSAA |
+| Shadows | the level's | | | |
+| GTAO | the level's (the game's radius and strength) | | | |
+| Bloom (0.45 / 0.4 / threshold 0.9) | the level's | | | |
+| Grade (display space: S-curve, +10 % saturation, split toning, 0.2 vignette) | the level's | | | |
+| Antialiasing | the level's | | | |
 | Ground grain / water normals | — | 128 / 64 px | 256 / 128 | 512 / 256 |
 | Round-part segments | ×1 | ×1 | ×1.5 | ×2 |
 | Particles | off | 30 % of 2000 | 2000 + smoke | 3000 + smoke |
@@ -139,13 +139,13 @@ The board, picking and rules are identical on every tier. The old per-category o
 
 ### Audio (native/audio.ts)
 
-The authored one-shots (`sfx/*.opus`, `sfx/manifest.json`) per event on the effects bus; the music (a soft sine pad on a four-chord loop and an arpeggio layer that fades in with the charter's progress) and the wind ambience (low-passed noise with a swaying cutoff) are rendered into looping clips in slices across frames and played on the music bus (the ambience at the old 0.4 : 0.5 ratio). The old synthesized fallbacks are not played while a clip loads. The runtime's Options own the volumes and mute.
+The authored one-shots (`sfx/*.opus`, `sfx/manifest.json`) per event on the effects bus; the music (a soft sine pad on a four-chord loop and an arpeggio layer that fades in with the charter's progress) and the wind ambience (low-passed noise with a swaying cutoff) are rendered natively into looping clips (OfflineAudioContext, createNoise) and played on the music bus (the ambience at the old 0.4 : 0.5 ratio). The old synthesized fallbacks are not played while a clip loads. The runtime's Options own the volumes and mute.
 
 ## 5. Technical architecture
 
 - `js/rules.js`, `js/content.js`, `js/session.js`, `js/rng.js`: the pure, deterministic rules, content (44 Journey stages, 5 lessons, Daily, Practice, 4 challenges, themes, the greedy validator bot) and session (commands, undo, the day clock fed by the runtime's fixed steps, snapshots, replay envelopes), shared with the node tests.
 - `js/store.js`: settings, progress, achievements, local boards and the autosave as versioned, checksummed documents over a swappable key/value backend; the cloud-document merge; the game's option validation.
-- `js/i18n.js`, `js/locales/`, `js/names.js`, `js/sh-strings.js`: localization.
+- `js/i18n.js`, `assets/strings.json`, `js/names.js`: localization.
 - `native/main.ts` (screen flow, input, clock, lessons, results), `native/screens.ts` (every screen), `native/render.ts`, `native/quality.ts`, `native/audio.ts`, `native/platform.ts`, `native/style.ts` (tools/ui-style.css → assets/ui-style.json, high-contrast tokens), `native/i18n.ts`, `native/game.ts` (typed facade over the js modules).
 - The game clock advances 1/60 s per fixed step: days, the countdown and toasts never depend on frame rate, and play scripts replay exactly. A hidden window pauses the settlement (the pause panel shows on return), silences the loops and autosaves.
 - Rule timings measured natively: a legal-action sweep and the hint take ≈ 1 ms on a 12×12 board, 12 bot days ≈ 56 ms; no worker is needed.

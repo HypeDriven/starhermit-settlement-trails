@@ -29,10 +29,8 @@ import { token } from "./style.ts";
 // ------------------------------------------------------------------ layout
 interface Layout { lw: number; lh: number; sc: number; wide: boolean; phone: boolean; land: boolean }
 function layoutNow(): Layout {
-  const f = frame();
-  const sc = ui.preferences().scale;
-  const sa = f.safeArea;
-  const lw = Math.max(1, (f.width - sa.left - sa.right) / sc), lh = Math.max(1, (f.height - sa.top - sa.bottom) / sc);
+  const v = ui.viewport!();
+  const sc = v.scale, lw = Math.max(1, v.width), lh = Math.max(1, v.height);
   const land = lh <= 500 && lw > lh;
   return { lw, lh, sc, wide: lw >= 1024 && !land, phone: lw <= 700 && lh >= lw, land };
 }
@@ -77,22 +75,10 @@ function button(b: Btn): void {
   }
 }
 /** Buttons at their own widths in rows that wrap at `width` (flex-wrap). */
-function flow(label: string, list: Btn[], width: number, gap = 8, justify: "start" | "center" = "start"): number {
-  const rows: Btn[][] = [[]];
-  let used = 0;
-  const bw = (b: Btn): number => Math.min(width, b.width ?? buttonWidth(b.text, b.style ?? "btn"));
-  for (const b of list) {
-    const w = bw(b);
-    if (rows[rows.length - 1]!.length && used + gap + w > width) { rows.push([]); used = 0; }
-    used += (rows[rows.length - 1]!.length ? gap : 0) + w;
-    rows[rows.length - 1]!.push(b);
-  }
-  ui.column(label, () => {
-    rows.forEach((row, ri) => ui.row(`${label}-r${ri}`, () => {
-      for (const b of row) button({ ...b, width: bw(b) });
-    }, { spacing: gap, width, justify, align: "center" }));
-  }, { spacing: gap, width });
-  return rows.length;
+function flow(label: string, list: Btn[], width: number, gap = 8, justify: "start" | "center" = "start"): void {
+  ui.row(label, () => {
+    for (const b of list) button({ ...b, width: Math.min(width, b.width ?? buttonWidth(b.text, b.style ?? "btn")) });
+  }, { wrap: true, width, gap, justify, align: "center" });
 }
 /** A box over a logical rectangle drawn by a placed role-none widget. */
 function paint(id: string, x: number, y: number, w: number, h: number, cls: string): void {

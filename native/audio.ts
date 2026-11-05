@@ -3,19 +3,17 @@
 // event and rules event, the adaptive two-layer music bed (a soft sine pad on
 // the A minor – G – F – G-ish chord loop, a new chord every 4 s, and a light
 // triangle arpeggio every 0.5 s that fades in with the charter's progress)
-// and the quiet wind ambience (pink-ish noise low-passed at 400 Hz, the
-// cutoff swaying ±150 Hz at 0.07 Hz). The browser build ran the music and the
-// ambience live (oscillators on timers, a looping noise buffer); here the pad
-// (16 s), the arpeggio (48 s: the chord and the arpeggio step line up again)
-// and two LFO periods of the wind are rendered into clips, a slice a frame
-// (createClip), and looped on the music bus — the runtime has no ambience
-// bus; the wind plays at the old ambience-to-music bus ratio (0.4 / 0.5). The
-// synthesized transients audio.js played while a sample decoded are not
-// ported (a live synthesis graph makes clip loads fail on the web runtime): a
-// clip still loading is silent. The runtime's Options own the volumes and the
-// mute. Clips load once the mixer runs (natively at once, in a browser after
-// the first press), one at a time.
-import { context, createClip, loadClip, play as playClip, type AudioClip, type Sound } from "starhermit:audio";
+// and the quiet wind ambience (low-passed noise, the cutoff swaying ±150 Hz
+// around 400 Hz at 0.07 Hz). The browser build ran the music and the ambience
+// live (oscillators on timers, a looping noise buffer); here the pad (16 s),
+// the arpeggio (48 s: the chord and the arpeggio step line up again) and two
+// LFO periods of the wind are rendered natively into clips
+// (OfflineAudioContext) and looped on the music bus — the runtime has no
+// ambience bus; the wind plays at the old ambience-to-music bus ratio
+// (0.4 / 0.5). The runtime's Options own the volumes and the mute. Every clip
+// loads at the start; a cue whose clip is still loading is skipped; the loops
+// start once the mixer runs and the player has pressed something.
+import { context, createClip, loadClip, OfflineAudioContext, play as playClip, type AudioBuffer, type AudioClip, type Sound } from "starhermit:audio";
 
 /** audio.js SFX_SAMPLES. */
 const SAMPLES: Record<string, string> = {
@@ -26,13 +24,18 @@ const SAMPLES: Record<string, string> = {
 };
 export type Sfx = keyof typeof SAMPLES;
 const clips = new Map<string, AudioClip>();
-const queue: string[] = [];
-let loading = false;
-let wantClips = false;
 let suspended = false;
 
-/** Asks for the clips; they load once the mixer runs (see update). */
-export function loadSfx(): void { wantClips = true; }
+/** Loads every clip and starts the loops' renders (onStart). */
+export function loadSfx(): void {
+  for (const name of new Set(Object.values(SAMPLES))) {
+    loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => { console.warn(`sfx ${name}: ${e instanceof Error ? e.message : String(e)}`); });
+  }
+  const failed = (e: unknown): void => { console.warn(`audio render: ${String(e)}`); };
+  renderPad().then((c) => { padClip = c; }, failed);
+  renderArp().then((c) => { arpClip = c; }, failed);
+  renderWind().then((c) => { ambClip = c; }, failed);
+}
 /** audio.js play(name). */
 export function play(name: Sfx): void {
   if (suspended) return;
@@ -40,7 +43,7 @@ export function play(name: Sfx): void {
   if (!file) return;
   const clip = clips.get(file);
   if (!clip) return;
-  try { playClip(clip, { bus: "effects" }); } catch { clips.delete(file); if (!queue.includes(file)) queue.push(file); }
+  try { playClip(clip, { bus: "effects" }); } catch { /* the mixer is full this frame: skip it */ }
 }
 /** audio.js playEvent: rules events to sounds. */
 export function playEvent(ev: { kind: string; building?: string }): void {
@@ -60,101 +63,95 @@ export function playEvent(ev: { kind: string; building?: string }): void {
 
 // -- synthesis ----------------------------------------------------------------------------------
 const RATE = 22050;
-const SINE_N = 4096;
-const SINE = new Float32Array(SINE_N + 1);
-for (let i = 0; i <= SINE_N; i++) SINE[i] = Math.sin((i / SINE_N) * 2 * Math.PI);
 const CHORDS = [[220.0, 261.6, 329.6], [196.0, 246.9, 293.7], [174.6, 220.0, 261.6], [196.0, 233.1, 311.1]];
-const jobs: (() => void)[] = [];
+/** A loop of n samples from a render that rang on past it: the tail wraps round onto the start. */
+function looped(r: AudioBuffer, n: number): AudioClip {
+  const d = r.getChannelData(0), out = d.slice(0, n);
+  for (let i = n; i < d.length; i++) out[i - n] = out[i - n]! + d[i]!;
+  return createClip([out], RATE);
+}
 
 // The pad: each chord's three sines (±0.2 % detune) swell to 0.12 over 1.6 s and fall to silence by 4.4 s,
 // a chord every 4 s, through the pad gain 0.16; wrapped round the 16-second loop.
-const PAD_N = 16 * RATE;
-const pad = new Float32Array(PAD_N);
-let padReady = false;
-CHORDS.forEach((chord, ci) => {
-  chord.forEach((f0, k) => {
-    const f = f0 * (1 + ((ci * 3 + k) % 5 - 2) * 0.0008);
-    const start = ci * 4 * RATE, len = Math.round(4.6 * RATE), up = 1.6 * RATE, down = 4.4 * RATE;
-    const PARTS = 6;
-    for (let part = 0; part < PARTS; part++) {
-      const i0 = Math.floor((len * part) / PARTS), i1 = Math.floor((len * (part + 1)) / PARTS);
-      jobs.push(() => {
-        let ph = ((f * i0) / RATE) % 1;
-        for (let i = i0; i < i1; i++) {
-          const e = i < up ? 0.12 * (i / up) : i < down ? 0.12 + (0.0001 - 0.12) * ((i - up) / (down - up)) : 0;
-          const j = (start + i) % PAD_N;
-          pad[j] = pad[j]! + SINE[(ph * SINE_N) | 0]! * e * 0.16;
-          ph += f / RATE;
-          if (ph >= 1) ph -= 1;
-        }
-      });
-    }
+async function renderPad(): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round(16.4 * RATE), RATE);
+  const master = off.createGain();
+  master.gain.value = 0.16;
+  master.connect(off.destination);
+  CHORDS.forEach((chord, ci) => {
+    chord.forEach((f0, k) => {
+      const t = ci * 4;
+      const osc = off.createOscillator(), env = off.createGain();
+      osc.frequency.value = f0 * (1 + ((ci * 3 + k) % 5 - 2) * 0.0008);
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(0.12, t + 1.6);
+      env.gain.linearRampToValueAtTime(0.0001, t + 4.4);
+      env.gain.setValueAtTime(0, t + 4.4);
+      osc.connect(env).connect(master);
+      osc.start(t);
+      osc.stop(t + 4.4);
+    });
   });
-});
-jobs.push(() => { padReady = true; });
+  return looped(await off.startRendering(), 16 * RATE);
+}
 
 // The arpeggio: every 0.5 s a triangle note an octave above the current chord's next tone (0.09, 20 ms attack,
-// exponential fall over 0.5 s) at the layer's full level 0.14 (the voice gain follows the intensity).
-const ARP_N = 48 * RATE;
-const arp = new Float32Array(ARP_N);
-let arpReady = false;
-for (let q = 0; q < 96; q += 2) {
-  const from = q;
-  jobs.push(() => {
-    for (let step = from; step < from + 2; step++) {
-      const t = step * 0.5;
-      const chord = CHORDS[Math.floor(t / 4) % 4]!;
-      const f = chord[step % 3]! * 2;
-      const start = Math.round(t * RATE), len = Math.round(0.6 * RATE), aN = Math.round(0.02 * RATE);
-      const fall = Math.pow(0.0001 / 0.09, 1 / Math.round(0.48 * RATE));
-      let ph = 0, env = 0.09;
-      for (let i = 0; i < len; i++) {
-        let e: number;
-        if (i < aN) e = 0.09 * (i / aN);
-        else { e = env; env *= fall; }
-        const w = 1 - 4 * Math.abs(ph - 0.5);
-        const j = (start + i) % ARP_N;
-        arp[j] = arp[j]! + w * e * 0.14;
-        ph += f / RATE;
-        if (ph >= 1) ph -= 1;
-      }
+// exponential fall over 0.48 s) at the layer's full level 0.14 (the voice gain follows the intensity).
+// One oscillator and gain a pitch, the notes as its gain's automation: 96 notes would pass a context's node bound.
+async function renderArp(): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round(48.6 * RATE), RATE);
+  const master = off.createGain();
+  master.gain.value = 0.14;
+  master.connect(off.destination);
+  const voices = new Map<number, ReturnType<typeof off.createGain>>();
+  for (let step = 0; step < 96; step++) {
+    const t = step * 0.5;
+    const f = CHORDS[Math.floor(t / 4) % 4]![step % 3]! * 2;
+    let env = voices.get(f);
+    if (!env) {
+      const osc = off.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = f;
+      env = off.createGain();
+      env.gain.value = 0;
+      osc.connect(env).connect(master);
+      osc.start();
+      voices.set(f, env);
     }
-  });
-}
-jobs.push(() => { arpReady = true; });
-
-// The wind: a one-pole pink-ish noise (×2), a 400 Hz low-pass whose cutoff an 0.07 Hz LFO moves ±150 Hz, at 0.35;
-// two LFO periods so the loop is seamless (rendered twice round so the filter's state joins up).
-const AMB_N = Math.round((2 / 0.07) * RATE);
-const amb = new Float32Array(AMB_N);
-let ambReady = false;
-{
-  let seed = 0xa0d10;
-  const rnd = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-  let last = 0, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  const SLICE = 40000;
-  for (let a = 0; a < 2 * AMB_N; a += SLICE) {
-    const from = a;
-    jobs.push(() => {
-      const to = Math.min(2 * AMB_N, from + SLICE);
-      let b0 = 0, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-      for (let i = from; i < to; i++) {
-        if ((i & 63) === 0 || i === from) {
-          const t = (i % AMB_N) / RATE;
-          const fc = 400 + 150 * Math.sin(2 * Math.PI * 0.07 * t);
-          const w = (2 * Math.PI * fc) / RATE, cw = Math.cos(w), al = Math.sin(w) / (2 * 1);
-          const a0 = 1 + al;
-          b0 = (1 - cw) / 2 / a0; b1 = (1 - cw) / a0; b2 = (1 - cw) / 2 / a0; a1 = -2 * cw / a0; a2 = (1 - al) / a0;
-        }
-        last = 0.98 * last + 0.02 * (rnd() * 2 - 1);
-        const x = last * 2;
-        const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-        x2 = x1; x1 = x; y2 = y1; y1 = y;
-        if (i >= AMB_N) amb[i - AMB_N] = y * 0.35;
-      }
-    });
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.09, t + 0.02);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    env.gain.setValueAtTime(0, t + 0.6);
   }
-  jobs.push(() => { ambReady = true; });
+  return looped(await off.startRendering(), 48 * RATE);
+}
+
+// The wind: brown noise over a 40 Hz high-pass (the old one-pole pink-ish noise had no sub-bass), a 400 Hz
+// low-pass (Q as the old one, linear 1) whose cutoff an 0.07 Hz LFO moves ±150 Hz, level matched to the old bed;
+// two LFO periods, so a settled render of the periodic noise and LFO loops seamlessly.
+const WIND_GAIN = 0.2146; // 0.35 on the old noise: rms .0402 as the old bed
+async function renderWind(): Promise<AudioClip> {
+  const n = Math.round((2 / 0.07) * RATE), settle = RATE;
+  const off = new OfflineAudioContext(1, settle + n, RATE);
+  const noise = off.createNoise({ color: "brown", seed: 0xa0d10, seconds: n / RATE });
+  const hp = off.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 40;
+  const lp = off.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 400;
+  lp.Q.value = 0;
+  const lfo = off.createOscillator(), depth = off.createGain();
+  lfo.frequency.value = 0.07;
+  depth.gain.value = 150;
+  lfo.connect(depth).connect(lp.frequency);
+  const g = off.createGain();
+  g.gain.value = WIND_GAIN;
+  noise.connect(hp).connect(lp).connect(g).connect(off.destination);
+  noise.start();
+  lfo.start();
+  const r = await off.startRendering();
+  return createClip([r.getChannelData(0).slice(settle)], RATE);
 }
 
 // -- playback ---------------------------------------------------------------------------------
@@ -180,36 +177,13 @@ export function setSuspended(on: boolean): void {
   } catch { /* gone */ }
 }
 
-/** Each frame: a synthesis job, the clips once the mixer runs (one at a time), then the loops. */
+/** Each frame: the loops, once the mixer runs and the player has pressed something. */
 export function update(): void {
-  if (jobs.length) {
-    try { jobs.shift()!(); } catch (e) { console.warn(`audio render: ${String(e)}`); }
-  }
-  if (context.state !== "running") return;
-  if (wantClips) {
-    wantClips = false;
-    for (const n of Object.values(SAMPLES)) if (!queue.includes(n)) queue.push(n);
-  }
-  if (!loading && queue.length) {
-    const name = queue.shift()!;
-    if (!clips.has(name)) {
-      loading = true;
-      loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); loading = false; }, (e: unknown) => {
-        console.warn(`sfx ${name}: ${e instanceof Error ? e.message : String(e)}`);
-        loading = false;
-      });
-    }
-    return;
-  }
-  if (loading || !started) return;
-  // one clip operation a frame
+  if (context.state !== "running" || !started) return;
   try {
-    if (padReady && !padClip) { padClip = createClip([pad], RATE); return; }
-    if (ambReady && !ambClip) { ambClip = createClip([amb], RATE); return; }
-    if (arpReady && !arpClip) { arpClip = createClip([arp], RATE); return; }
-    if (padClip && !padVoice) { padVoice = playClip(padClip, { bus: "music", gain: suspended ? 0 : 1, loop: true }); return; }
-    if (ambClip && !ambVoice) { ambVoice = playClip(ambClip, { bus: "music", gain: suspended ? 0 : AMB_GAIN, loop: true }); return; }
-    if (arpClip && !arpVoice) { arpVoice = playClip(arpClip, { bus: "music", gain: 0, loop: true }); arpLevel = 0; return; }
+    if (padClip && !padVoice) padVoice = playClip(padClip, { bus: "music", gain: suspended ? 0 : 1, loop: true });
+    if (ambClip && !ambVoice) ambVoice = playClip(ambClip, { bus: "music", gain: suspended ? 0 : AMB_GAIN, loop: true });
+    if (arpClip && !arpVoice) { arpVoice = playClip(arpClip, { bus: "music", gain: 0, loop: true }); arpLevel = 0; }
   } catch (e) { console.warn(`audio: ${String(e)}`); return; }
   if (arpVoice && !suspended && Math.abs(intensity - arpLevel) > 0.02) {
     arpLevel = intensity;

@@ -17,8 +17,8 @@
 // countdown's 700 ms beats and the toasts run on a clock advanced 1/60 s per
 // fixed step, so slow frames never change a game and play scripts replay
 // exactly.
-import { clipboard, frame, onFixedUpdate, onPreferencesChange, onRender, onResume, onStart, onSuspend, onUpdate, preferences, setFixedRate } from "starhermit:engine";
-import { onAction, onPointerButton, onPointerMove, onTouch, onWheel, vibrate } from "starhermit:input";
+import { afterRender, clipboard, frame, levelSettings, onFixedUpdate, onPreferencesChange, onRender, onResume, onStart, onSuspend, onUpdate, preferences, setFixedRate } from "starhermit:engine";
+import { onAction, onGesture, onPointerMove, onTouch, onWheel, vibrate } from "starhermit:input";
 import * as ui from "starhermit:ui";
 import { onSessionEnded, requestSignIn } from "starhermit:platform";
 import {
@@ -99,11 +99,10 @@ export function toast(text: string, err = false): void {
   app.toast = { text, err, until: clockMs + 2600 };
   announce(text);
 }
-const pending: (() => void)[] = [];
 let uiPressed = false;
 /** A widget's press, run once the frame's UI is built (state changes mid-build would break later widgets);
  * the press (or tap) that activated it is the widget's, not the board's. */
-export function later(fn: () => void): void { pending.push(fn); uiPressed = true; }
+export function later(fn: () => void): void { afterRender(fn); uiPressed = true; }
 export function sound(name: audio.Sfx): void { audio.play(name); }
 export function theme(c: Content) { return Contents.THEMES[c.theme] ?? Contents.THEMES.meadow!; }
 export function profileName(): string { return platform.signedIn() ? platform.displayName() || T("Player") : T("Guest"); }
@@ -642,74 +641,38 @@ onAction((e) => {
 });
 
 // ------------------------------------------------------------------ pointer and touch on the board (render.js _bindPointer)
-let downAt: { x: number; y: number; t: number; drag: boolean; lx: number; ly: number } | null = null;
 const taps: { x: number; y: number }[] = [];
 let hoverAt: { x: number; y: number } | null = null;
 let lastTouch = -1e9;
-const fingers = new Map<number, { x: number; y: number }>();
-let pinchDist = 0;
-function press(x: number, y: number): void { downAt = { x, y, t: clockMs, drag: false, lx: x, ly: y }; pressConsumed = false; }
-function move(x: number, y: number): void {
-  if (!downAt) return;
+let dragging = false;
+let pinchAt = 1;
+// The engine's recognizer: a press the UI takes makes no gesture; a tap is within its slop and under its long press.
+onGesture!((e) => {
   const sc = frame().scale;
-  if (Math.abs(x - downAt.x) / sc > 8 || Math.abs(y - downAt.y) / sc > 8) downAt.drag = true;
-  if (downAt.drag && !pressConsumed && playing()) render.panBy((x - downAt.lx) / sc, (y - downAt.ly) / sc);
-  downAt.lx = x; downAt.ly = y;
-}
-function release(x: number, y: number): void {
-  if (!downAt) return;
-  const d = downAt;
-  downAt = null;
-  if (d.drag || clockMs - d.t >= 600 || pressConsumed) return;
-  taps.push({ x, y });
-}
-/** A press that began on a widget (HUD, rails, toolbox) belongs to the UI, not the board. */
-let pressConsumed = false;
-let pressPending = false;
-onTouch((e) => {
-  lastTouch = clockMs;
-  if (e.control) return;
-  if (e.phase === "start") fingers.set(e.id, { x: e.x, y: e.y });
-  else if (e.phase === "move") fingers.set(e.id, { x: e.x, y: e.y });
-  else fingers.delete(e.id);
-  if (fingers.size >= 2) {
-    // a two-finger pinch zooms (and cancels the tap / drag)
-    const [a, b] = [...fingers.values()];
-    const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y) / frame().scale;
-    if (pinchDist > 0 && playing()) render.zoomBy((pinchDist - dist) * 0.04);
-    pinchDist = dist;
-    downAt = null;
-    return;
+  switch (e.type) {
+    case "tap": taps.push({ x: e.x, y: e.y }); break;
+    case "dragStart": dragging = true; if (playing()) render.panBy(e.dx / sc, e.dy / sc); break;
+    case "drag": if (playing()) render.panBy(e.dx / sc, e.dy / sc); break;
+    case "dragEnd": dragging = false; break;
+    case "pinchStart": pinchAt = 1; break;
+    // a pinch zooms: the old 0.04 a logical pixel, at a typical 200 px between the fingers
+    case "pinch": if (playing()) render.zoomBy((pinchAt - e.scale) * 8); pinchAt = e.scale; break;
+    default: break;
   }
-  pinchDist = 0;
-  if (!e.primary) return;
-  if (e.phase === "start") { press(e.x, e.y); pressPending = true; }
-  else if (e.phase === "move") move(e.x, e.y);
-  else if (e.phase === "end") release(e.x, e.y);
-  else downAt = null;
 });
-onPointerButton((e) => {
-  if (e.button !== 0 || clockMs - lastTouch < 600) return;
-  if (e.pressed) { press(e.x, e.y); pressPending = true; } else release(e.x, e.y);
-});
+onTouch(() => { lastTouch = clockMs; });
 onPointerMove((x, y) => {
-  if (clockMs - lastTouch < 600) return;
-  hoverAt = { x, y };
-  move(x, y);
+  if (clockMs - lastTouch >= 600) hoverAt = { x, y };
 });
 onWheel((_dx, dy) => { if (playing() && !ui.pointerOver()) render.zoomBy(dy); });
-/** Presses on the board, decided after the frame's UI is built (so ui.pointerOver() is this frame's). */
+/** Taps and hover on the board, decided after the frame's UI is built (so ui.pointerOver() is this frame's). */
 function pointerInput(wasPlaying: boolean): void {
-  if (pressPending) {
-    pressPending = false;
-    if (ui.pointerOver() || !wasPlaying) pressConsumed = true;
-  }
   const list = uiPressed ? (taps.length = 0, []) : taps.splice(0);
   uiPressed = false;
   const h = hoverAt;
   hoverAt = null;
   if (!wasPlaying || !playing()) return;
-  if (h && !downAt && !ui.pointerOver()) {
+  if (h && !dragging && !ui.pointerOver()) {
     const cell = render.pick(h.x, h.y);
     if (!cell) { if (app.hover) tileHover(null); }
     else if (!app.hover || app.hover.x !== cell.x || app.hover.y !== cell.y) tileHover(cell);
@@ -745,10 +708,9 @@ onFixedUpdate(() => {
 let lookKey = "";
 function applyLook(): void {
   const f = frame();
-  const k = `${f.quality}:${f.levelIndex}`;
-  if (k === lookKey) return;
-  lookKey = k;
-  render.applyLook(lookFor(f.quality, f.levelIndex));
+  if (f.level === lookKey) return;
+  lookKey = f.level;
+  render.applyLook(lookFor(levelSettings(f.level)));
 }
 function applyOptions(): void {
   const o = platform.options();
@@ -802,7 +764,6 @@ onUpdate((dt) => {
 onRender(() => {
   const wasPlaying = playing();
   drawScreens();
-  for (const fn of pending.splice(0)) fn();
   pointerInput(wasPlaying);
   const f = frame();
   render.update(frameDt, f.width, f.height);

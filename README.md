@@ -23,7 +23,7 @@ npm run test:browser    # the packaged loader in Chrome on the GPU (desktop, pho
 ## Layout
 
 - `js/rules.js`, `js/content.js`, `js/session.js`, `js/rng.js` — the pure rules, content and session (shared with the tests)
-- `js/store.js` — the save documents and their merge; `js/i18n.js`, `js/locales/`, `js/names.js`, `js/sh-strings.js` — localization
+- `js/store.js` — the save documents and their merge; `js/i18n.js`, `assets/strings.json`, `js/names.js` — localization
 - `native/*.ts` — the engine client (screens, scene, audio, platform, quality, style)
 - `tools/` — `ui-style.css` → `assets/ui-style.json` (`npm run css`), `bake-textures.mjs`, `gen-plays.mjs`, `browser-play.mjs`, `package-web.mjs`
 - `score-script.js` — the platform script: range-checks posted totals for the `high-score` board

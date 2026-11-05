@@ -8,8 +8,8 @@
 // road, house, farm, lumber hut, well, market: parts merged into one
 // vertex-coloured mesh per material kind; glowing windows, kerbs and the
 // plinth when detailed), the "!" markers over unhappy homes, the hover ring,
-// the keyboard cursor, the green/red ghost preview, pooled burst and chimney-
-// smoke particles, pop-in animations, camera shake and the authored orbit
+// the keyboard cursor, the green/red ghost preview, burst and chimney-smoke
+// particles (native emitters), pop-in animations, camera shake and the authored orbit
 // camera (pan, zoom, reset; fitted to narrow windows). Rendering reads rules
 // state and never writes it.
 //
@@ -26,9 +26,9 @@
 import {
   ACESFilmicToneMapping, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, ConeGeometry, CylinderGeometry,
   DirectionalLight, DodecahedronGeometry, Euler, Fog, Group, HemisphereLight, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, PMREMGenerator, Points,
+  MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, PMREMGenerator, ParticleEmitter,
   PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment, SRGBColorSpace, Sprite, SpriteMaterial, TextureLoader,
-  Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type OrthographicCamera, type Texture,
+  Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type OrthographicCamera, type ParticleEmitterOptions, type Texture,
 } from "starhermit:scene";
 import { OffscreenCanvas } from "starhermit:canvas";
 import type { Content, HouseInfo, State, Theme } from "./game.ts";
@@ -262,65 +262,38 @@ let ghost: Group | null = null;
 let ghostType: string | null = null;
 let ghostAt: { x: number; y: number; valid: boolean } | null = null;
 
-// ---------------------------------------------------------------- particles (pooled)
-const pPos = new Float32Array(PARTICLE_MAX * 3).fill(-999);
-const pVel = new Float32Array(PARTICLE_MAX * 3);
-const pLife = new Float32Array(PARTICLE_MAX);
-const pGrav = new Float32Array(PARTICLE_MAX);
-const pCol = new Float32Array(PARTICLE_MAX * 3);
+// ---------------------------------------------------------------- particles (native emitters)
+/** The look's particle pool (0 = off): bursts stop short of it. */
 let poolSize = 0;
-let pHead = 0;
-const pGeo = new BufferGeometry();
-pGeo.setAttribute("position", new BufferAttribute(pPos, 3));
-pGeo.setAttribute("color", new BufferAttribute(pCol, 3));
-const points = new Points(pGeo, new PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, map: dotTexture() }));
-points.frustumCulled = false;
-fxGroup.add(points);
-
-/** render.js burst: n coloured specks thrown up from a point. */
-export function burst(x: number, y: number, z: number, color: number, n = 12): void {
+const dotMat = new PointsMaterial({ size: 0.11, transparent: true, opacity: 0.9, depthWrite: false, map: dotTexture() });
+const particleEmitter = (o: ParticleEmitterOptions): ParticleEmitter => {
+  const e = new ParticleEmitter({ material: dotMat, space: "local", ...o });
+  e.frustumCulled = false;
+  fxGroup.add(e);
+  return e;
+};
+const dust = particleEmitter({
+  capacity: PARTICLE_MAX, seed: 0x5e77, color: 0xd8c890, life: [0.6, 1],
+  velocity: [0, 1.6, 0], velocitySpread: [0.48, 0.6, 0.48], gravity: [0, -3.5, 0],
+});
+/** Chimney smoke, one emitter a shade (a set colour would recolour live puffs). */
+const smokes = [0.78, 0.83, 0.88].map((v, i) => particleEmitter({
+  capacity: 32, seed: 0x5e78 + i, color: new Color(v, v * 0.98, v * 0.95), life: [1.2, 1.8],
+  velocity: [0.09, 0.3, 0], velocitySpread: [0.04, 0.08, 0.04], gravity: [0, 0.02, 0],
+}));
+function setParticlePool(size: number): void {
+  poolSize = size;
+  for (const e of [dust, ...smokes]) { e.clear(); e.visible = size > 0; }
+}
+/** render.js burst: n dust specks thrown up from a point. */
+function burst(x: number, y: number, z: number, n = 12): void {
   if (!poolSize || reducedMotion) return;
-  const c = new Color(color);
-  for (let i = 0; i < n; i++) {
-    const idx = pHead;
-    pHead = (pHead + 1) % poolSize;
-    pGrav[idx] = 3.5;
-    pPos[idx * 3] = x; pPos[idx * 3 + 1] = y; pPos[idx * 3 + 2] = z;
-    const a = Math.random() * PI * 2;
-    const v = 0.5 + Math.random() * 1.2;
-    pVel[idx * 3] = Math.cos(a) * v * 0.4;
-    pVel[idx * 3 + 1] = 1 + Math.random() * 1.2;
-    pVel[idx * 3 + 2] = Math.sin(a) * v * 0.4;
-    pLife[idx] = 0.6 + Math.random() * 0.4;
-    pCol[idx * 3] = c.r; pCol[idx * 3 + 1] = c.g; pCol[idx * 3 + 2] = c.b;
-  }
+  const room = Math.min(n, poolSize - dust.count);
+  if (room > 0) dust.burst(room, [x, y, z]);
 }
 /** Slow chimney smoke puff (ambient; top particle tier only). */
 function smoke(x: number, y: number, z: number): void {
-  const idx = pHead;
-  pHead = (pHead + 1) % poolSize;
-  pPos[idx * 3] = x; pPos[idx * 3 + 1] = y; pPos[idx * 3 + 2] = z;
-  pVel[idx * 3] = 0.05 + Math.random() * 0.08;
-  pVel[idx * 3 + 1] = 0.22 + Math.random() * 0.16;
-  pVel[idx * 3 + 2] = 0.08 * (Math.random() - 0.5);
-  pLife[idx] = 1.2 + Math.random() * 0.6;
-  pGrav[idx] = -0.02;
-  const v = 0.78 + Math.random() * 0.1;
-  pCol[idx * 3] = v; pCol[idx * 3 + 1] = v * 0.98; pCol[idx * 3 + 2] = v * 0.95;
-}
-function updateParticles(dt: number): void {
-  if (!poolSize) { points.visible = false; return; }
-  points.visible = true;
-  for (let i = 0; i < poolSize; i++) {
-    if (pLife[i]! <= 0) { pPos[i * 3 + 1] = -999; continue; }
-    pLife[i] = pLife[i]! - dt;
-    pVel[i * 3 + 1] = pVel[i * 3 + 1]! - pGrav[i]! * dt;
-    pPos[i * 3] = pPos[i * 3]! + pVel[i * 3]! * dt;
-    pPos[i * 3 + 1] = pPos[i * 3 + 1]! + pVel[i * 3 + 1]! * dt;
-    pPos[i * 3 + 2] = pPos[i * 3 + 2]! + pVel[i * 3 + 2]! * dt;
-  }
-  (pGeo.attributes.position as BufferAttribute).needsUpdate = true;
-  (pGeo.attributes.color as BufferAttribute).needsUpdate = true;
+  smokes[(Math.random() * smokes.length) | 0]!.burst(1, [x, y, z]);
 }
 
 // ---------------------------------------------------------------- the board
@@ -733,7 +706,7 @@ export function sync(state: State, needs: Map<number, HouseInfo> | null): void {
         buildingMeshes.set(k, g);
         if (!quietSync) {
           if (!reducedMotion) { g.scale.setScalar(0.01); popAnims.push({ group: g, t: 0 }); }
-          burst(wx(x), cellTopY(x, y) + 0.4, wz(y), 0xd8c890, 10);
+          burst(wx(x), cellTopY(x, y) + 0.4, wz(y), 10);
         }
       }
       updateNeedSprite(k, x, y, b.type, b.happy);
@@ -890,15 +863,15 @@ export function applyLook(next: Look): void {
   if (look && JSON.stringify(look) === JSON.stringify(next)) return;
   const prev = look;
   look = next;
-  const b = next.budget;
-  renderer.ao = next.ao === "off" ? null : {
-    blendIntensity: next.ao === "high" ? 0.85 : 0.7, radius: 0.35, distanceExponent: 1.5, thickness: 0.6, scale: 1.0,
-    samples: next.ao === "high" ? 16 : 8, resolution: b.aoRes,
-    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
+  const ao = next.ao, full = !!ao && ao.resolution >= 1; // the engine's AO quality: resolution under 1 is "on", 1 is "high"
+  renderer.ao = !ao ? null : {
+    blendIntensity: full ? 0.85 : 0.7, radius: 0.35, distanceExponent: 1.5, thickness: 0.6, scale: 1.0,
+    samples: ao.samples, resolution: ao.resolution,
+    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: full ? 6 : 4, rings: 2, samples: ao.denoiseSamples, radiusExponent: 2 },
   };
   // High threshold: only window glow, water glints and bright highlights bloom.
   // r160 page: the engine's r160 bloom model at the page's strength (engine.minor 30).
-  renderer.bloom = next.bloom ? { model: "r160", strength: 0.45, radius: 0.4, threshold: 0.9, resolution: b.bloomRes } : null;
+  renderer.bloom = next.bloom === null ? null : { model: "r160", strength: 0.45, radius: 0.4, threshold: 0.9, resolution: next.bloom };
   // render.js GradeShader after the output (display space): a 0.22-weight smoothstep S-curve (contrastCurve "s"),
   // +10 % saturation, cool shadows / warm highlights split by a 0.2–0.8 smoothstep of luma, the 0.2
   // vignette from 0.38 to 0.8 (vertical distance × 0.85).
@@ -910,9 +883,7 @@ export function applyLook(next: Look): void {
   renderer.shadowMap.enabled = next.shadows > 0;
   keyLight.castShadow = next.shadows > 0;
   if (next.shadows > 0) keyLight.shadow.mapSize = next.shadows;
-  poolSize = Math.min(PARTICLE_MAX, particlePool(next));
-  pLife.fill(0); pPos.fill(-999); pHead = 0;
-  pGeo.setDrawRange(0, Math.max(1, poolSize));
+  setParticlePool(Math.min(PARTICLE_MAX, particlePool(next)));
   applyDetailLights();
   const assets = (l: Look | null): string => (l ? [l.detailed, l.budget.texture, l.budget.segments, l.budget.clouds].join("|") : "");
   if (content && theme && prev && assets(prev) !== assets(next)) rebuild();
@@ -938,7 +909,7 @@ export function setReducedMotion(on: boolean): void {
   if (on) {
     for (const a of popAnims) a.group.scale.setScalar(1);
     popAnims.length = 0;
-    pLife.fill(0);
+    for (const e of [dust, ...smokes]) e.clear();
   }
 }
 export function setCameraShake(on: boolean): void { cameraShake = on; }
@@ -946,7 +917,7 @@ export function setActive(on: boolean): void { renderer.camera = on ? camera : n
 
 // ---------------------------------------------------------------- the frame
 let lastAspect = 0;
-/** render.js update: water, clouds, pop-ins, marker bob, chimney smoke, particles, the camera. */
+/** render.js update: water, clouds, pop-ins, marker bob, chimney smoke, the camera. */
 export function update(dtIn: number, w: number, h: number): void {
   const dt = Math.min(0.1, Math.max(0, dtIn));
   if (w > 0 && h > 0) {
@@ -996,6 +967,5 @@ export function update(dtIn: number, w: number, h: number): void {
     }
   }
   shake = Math.max(0, shake - (dt * 1000) / 300);
-  updateParticles(dt);
   applyCamera(0);
 }
