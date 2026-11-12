@@ -1,3 +1,5 @@
+// localization-runtime:attached
+import { localizedCanvasFont as __l10nCanvasFont } from "./l10n/font.ts";
 // The low-poly settlement on starhermit:scene, as the browser build's
 // js/render.js drew it with three.js r160: the tabletop board of instanced
 // land tiles (hills raised, per-tile colour jitter, ground grain when
@@ -173,7 +175,7 @@ function needTexture(): CanvasTexture {
   g.fillStyle = "#ffd54a";
   g.beginPath(); g.arc(32, 32, 26, 0, PI * 2); g.fill();
   g.fillStyle = "#4a3800";
-  g.font = "bold 40px sans-serif";
+  g.font = __l10nCanvasFont("bold 40px sans-serif");
   g.textAlign = "center"; g.textBaseline = "middle";
   g.fillText("!", 32, 34);
   needTex = new CanvasTexture(c);

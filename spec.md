@@ -186,3 +186,11 @@ Success targets for the first public test: median first-play time under 20 secon
 - Text-presentation symbols in the toolbox (🛤 road, ⚖️ market, ✖️ demolish) draw as monochrome glyphs in the text colour on the engine.
 - In short landscape the lesson card can cover far tiles; the keyboard or a pan reaches them.
 - Kept from the browser build: Practice maps use a random seed (unranked); the happiness chip now shows the homes' average happiness (it stayed "–" in the browser build).
+
+<!-- regional-localization:start -->
+
+### Regional interface languages
+
+The string tables include complete regional variants for `fr-BE`, `de-BE`, `en-SG`, `en-HK`, `en-BQ`, `es-CO`, `de-IT`, `fr-IT`, `es-CL`, `es-AR`, `es-EC`, `de-BR`. These reuse the corresponding existing translations in their language family. The runtime can resolve the exact regional tag. Language selection is available from the game’s Options panel or F2 and is saved per player in `ui.language`. Changes apply during play. Additional national, regional and indigenous language packs are only shipped once every English message has a translation with intact placeholders and markup. Complete additional language tables: `ja-JP`, `nl-BE`, `zh-SG`, `nl-NL`, `id-ID`, `vi-VN`, `ms-SG`, `ta-SG`, `zh-HK`, `yue-HK`, `sv-FI`, `et-EE`, `fi-FI`, `da-DE`, `sl-IT`, `ru-FI`, `ru-EE`, `lb-BE`, `co-FR`, `eu-FR`, `ca-FR`, `oc-FR`, `fur-IT`, `ca-IT`, `oc-IT`, `ca-ES`, `eu-ES`, `gl-ES`, `su-ID`, `bew-ID`, `km-VN`.
+
+<!-- regional-localization:end -->
