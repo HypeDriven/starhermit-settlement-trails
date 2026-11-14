@@ -1,5 +1,7 @@
 # Settlement Trails
 
+**[▶ Play Settlement Trails on StarHermit](https://dashboard.starhermit.com/play/a1a31a1f-5490-4e3c-ab4e-dca996860209)**
+
 A cozy low-poly settlement builder: place homes, roads, wells, farms, lumber
 huts and markets; keep residents happy; fulfil trade orders before the
 charter expires. A StarHermit engine script game (engine 1.39.0, minor 39),
