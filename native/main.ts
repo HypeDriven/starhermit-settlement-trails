@@ -97,7 +97,7 @@ function flushAnnouncements(): void {
 }
 /** ui.js toast: one at a time for 2.6 s, announced. */
 export function toast(text: string, err = false): void {
-  app.toast = { text, err, until: clockMs + 2600 };
+  ui.toast!(text, { kind: err ? "error" : "info", duration: 2.6, position: "bottom", offset: app.screen === "game" ? 120 : 24, style: err ? "toast-err" : "toast", dismissible: false });
   announce(text);
 }
 let uiPressed = false;

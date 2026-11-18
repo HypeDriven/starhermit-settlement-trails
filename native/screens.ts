@@ -104,7 +104,7 @@ function paint(id: string, x: number, y: number, w: number, h: number, cls: stri
 }
 
 // ------------------------------------------------------------------ the frame
-export function drawScreens(): void {
+function drawScreensImmediate(): void {
   const L = layoutNow();
   const f = frame();
   render.setActive(app.screen === "game");
@@ -112,7 +112,6 @@ export function drawScreens(): void {
   else if (app.screen === "picker") pickerScreen(L);
   else if (inGame()) gameScreen(L);
   overlay(L);
-  toastBox(L);
   if (app.focusNext) {
     const age = f.frame - app.openedFrame;
     if (age >= 1) ui.setFocus(app.focusNext);
@@ -573,22 +572,6 @@ function boardTargets(L: Layout): void {
     { x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r }, { role: "label" });
 }
 
-// ------------------------------------------------------------------ toast
-function toastBox(L: Layout): void {
-  const t = app.toast;
-  if (!t) return;
-  const w = Math.min(L.lw * 0.9, 560);
-  const tbH = (lastSize.get("toolbox")?.height ?? 70 * L.sc) / L.sc;
-  const bottom = app.screen === "game" && !L.land ? tbH + 50 : 24;
-  const prev = lastSize.get("toast");
-  const pw = prev ? prev.width / L.sc : w;
-  const ph = prev ? prev.height / L.sc : 40;
-  ui.place("toast", { anchor: "top-start", x: (L.lw - pw) / 2, y: L.lh - bottom - ph }, () => {
-    const fits = textWidth(t.text, "toast-text") <= w - 34;
-    lastSize.set("toast", ui.column("toast-box", () => para(t.text, w - 34, "toast-text", "toast-text"), { style: t.err ? "toast-err" : "toast", ...(fits ? {} : { width: w }) }));
-  });
-}
-
 // ------------------------------------------------------------------ overlay panels (.screen.overlay > .panel)
 function overlay(L: Layout): void {
   const o = topOverlay();
@@ -800,3 +783,10 @@ function scoresPanel(w: number): void {
   if (b?.note) para(b.note, w, "dim", "scores-note");
 }
 
+
+export function drawScreens(): void {
+  if (!(topOverlay() === "help")) { drawScreensImmediate(); return; }
+  const actions = ["up","down","left","right","confirm","inspect","demolish","tool1","tool2","tool3","tool4","tool5","tool6","tool7","tool8","tool9","toolprev","toolnext","pause","undo","hint","speed","camera"];
+  const version = JSON.stringify([(app as any).settings ?? (app as any).options ?? {}, (platform as any).options ?? {}, actions.map((action) => bindings(action))]);
+  ui.retain!("help-screen", version, drawScreensImmediate);
+}

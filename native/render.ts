@@ -1,16 +1,14 @@
 // localization-runtime:attached
-import { localizedCanvasFont as __l10nCanvasFont } from "./l10n/font.ts";
+import {
+  localizedCanvasFont as __l10nCanvasFont } from "./l10n/font.ts";
 // The low-poly settlement on starhermit:scene, as the browser build's
 // js/render.js drew it with three.js r160: the tabletop board of instanced
 // land tiles (hills raised, per-tile colour jitter, ground grain when
 // detailed), the river as instanced translucent water tiles over an opaque
 // bed (bobbing, with a drifting normal map), instanced forests (cone canopies
-// with per-tree tints, trunks) that vanish when their tile is cleared,
-// instanced rocks, drifting low-poly clouds high above, the buildings (hall,
-// road, house, farm, lumber hut, well, market: parts merged into one
+// with per-tree tints, trunks) that vanish when their tile is cleared, // instanced rocks, drifting low-poly clouds high above, the buildings (hall, // road, house, farm, lumber hut, well, market: parts merged into one
 // vertex-coloured mesh per material kind; glowing windows, kerbs and the
-// plinth when detailed), the "!" markers over unhappy homes, the hover ring,
-// the keyboard cursor, the green/red ghost preview, burst and chimney-smoke
+// plinth when detailed), the "!" markers over unhappy homes, the hover ring, // the keyboard cursor, the green/red ghost preview, burst and chimney-smoke
 // particles (native emitters), pop-in animations, camera shake and the authored orbit
 // camera (pan, zoom, reset; fitted to narrow windows). Rendering reads rules
 // state and never writes it.
@@ -26,12 +24,9 @@ import { localizedCanvasFont as __l10nCanvasFont } from "./l10n/font.ts";
 // window behind the HUD, rails and toolbox, as the camera does here. The
 // procedural ground grain and water normals are baked (tools/bake-textures.mjs).
 import {
-  ACESFilmicToneMapping, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, ConeGeometry, CylinderGeometry,
-  DirectionalLight, DodecahedronGeometry, Euler, Fog, Group, HemisphereLight, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, PMREMGenerator, ParticleEmitter,
-  PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment, SRGBColorSpace, Sprite, SpriteMaterial, TextureLoader,
-  Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type OrthographicCamera, type ParticleEmitterOptions, type Texture,
+  ACESFilmicToneMapping, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, ConeGeometry, CylinderGeometry, DirectionalLight, DodecahedronGeometry, Euler, Fog, Group, HemisphereLight, IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Plane, PMREMGenerator, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment, SRGBColorSpace, Sprite, SpriteMaterial, TextureLoader, Vector2, Vector3, pointerToNdc, renderer, scene, type Material, type OrthographicCamera, type Texture,
 } from "starhermit:scene";
+import { GPUParticleEmitter, type GPUParticleEmitterOptions } from "starhermit:particles";
 import { OffscreenCanvas } from "starhermit:canvas";
 import type { Content, HouseInfo, State, Theme } from "./game.ts";
 import { PARTICLE_MAX, particlePool, type Look } from "./quality.ts";
@@ -268,8 +263,8 @@ let ghostAt: { x: number; y: number; valid: boolean } | null = null;
 /** The look's particle pool (0 = off): bursts stop short of it. */
 let poolSize = 0;
 const dotMat = new PointsMaterial({ size: 0.11, transparent: true, opacity: 0.9, depthWrite: false, map: dotTexture() });
-const particleEmitter = (o: ParticleEmitterOptions): ParticleEmitter => {
-  const e = new ParticleEmitter({ material: dotMat, space: "local", ...o });
+const particleEmitter = (o: GPUParticleEmitterOptions): GPUParticleEmitter => {
+  const e = new GPUParticleEmitter({ material: dotMat, space: "local", ...o });
   e.frustumCulled = false;
   fxGroup.add(e);
   return e;

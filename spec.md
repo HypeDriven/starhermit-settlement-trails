@@ -5,7 +5,7 @@
 **Genre:** Settlement simulation  
 **Players:** 1 player; asynchronous score comparison on leaderboards  
 **Targets:** the StarHermit client (native) and browsers (the StarHermit engine's web runtime), desktop and mobile, landscape and portrait  
-**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.39.0`, `engine.minor=39`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
+**Implementation:** a StarHermit engine **script game** (TypeScript on the host API, `engine.version=1.44.1`, `engine.minor=44`): the settlement on `starhermit:scene`, every screen on `starhermit:ui`, sound on `starhermit:audio`, saves on `starhermit:storage`, the platform on `starhermit:platform`
 
 ## 1. Product vision
 
@@ -194,3 +194,13 @@ Success targets for the first public test: median first-play time under 20 secon
 The string tables include complete regional variants for `fr-BE`, `de-BE`, `en-SG`, `en-HK`, `en-BQ`, `es-CO`, `de-IT`, `fr-IT`, `es-CL`, `es-AR`, `es-EC`, `de-BR`. These reuse the corresponding existing translations in their language family. The runtime can resolve the exact regional tag. Language selection is available from the game’s Options panel or F2 and is saved per player in `ui.language`. Changes apply during play. Additional national, regional and indigenous language packs are only shipped once every English message has a translation with intact placeholders and markup. Complete additional language tables: `ja-JP`, `nl-BE`, `zh-SG`, `nl-NL`, `id-ID`, `vi-VN`, `ms-SG`, `ta-SG`, `zh-HK`, `yue-HK`, `sv-FI`, `et-EE`, `fi-FI`, `da-DE`, `sl-IT`, `ru-FI`, `ru-EE`, `lb-BE`, `co-FR`, `eu-FR`, `ca-FR`, `oc-FR`, `fur-IT`, `ca-IT`, `oc-IT`, `ca-ES`, `eu-ES`, `gl-ES`, `su-ID`, `bew-ID`, `km-VN`.
 
 <!-- regional-localization:end -->
+
+Cosmetic particle emitters use native GPU particles with automatic CPU fallback on devices or graphics tiers without GPU particle support.
+
+## Engine 1.44.1
+
+Browser play uses the WebGPU-only StarHermit 1.44.1 web runtime. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
+
+The help screen replays through retained native UI while its contents, options, layout and key bindings are unchanged.
+
+Toasts use native engine stacking, styling, accessibility and lifetime management.
