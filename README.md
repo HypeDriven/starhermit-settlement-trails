@@ -4,14 +4,14 @@
 
 A cozy low-poly settlement builder: place homes, roads, wells, farms, lumber
 huts and markets; keep residents happy; fulfil trade orders before the
-charter expires. A StarHermit engine script game (engine 1.44.1, minor 44),
+charter expires. A StarHermit engine script game (engine 1.47.0, minor 47),
 played natively by the StarHermit client and in browsers by the engine's web
 runtime. See `spec.md`.
 
 ## Run
 
 ```
-starhermit .            # the StarHermit runtime (STARHERMIT=~/sh/runtime/1.44.1/…/starhermit)
+starhermit .            # the StarHermit runtime (STARHERMIT=~/sh/runtime/1.47.0/…/starhermit)
 npm run package         # writes the web loader index.html + starhermit-files.json (after every change)
 ```
 
