@@ -12,7 +12,7 @@
     "metadataSource": "starhermit.txt",
     "createdAt": "2026-09-01T07:01:07.37577+00:00",
     "coverArtSource": "manifest",
-    "coverArtUpdatedAt": "2026-11-26T22:18:32.538859+00:00",
+    "coverArtUpdatedAt": "2026-11-27T17:07:37.266114+00:00",
     "submittedByUserId": "2712e04e-461b-4d23-81ae-e40b429128a8",
     "submittedByUsername": "starhermit",
     "hosting": {
@@ -22,9 +22,9 @@
       "pinnedCommitSha": null,
       "deployedCommitSha": null,
       "deployError": null,
-      "deployedAt": "2026-11-26T22:18:32.52745+00:00",
+      "deployedAt": "2026-11-27T17:07:37.2543+00:00",
       "externalLaunchUrl": null,
-      "engineVersion": "1.51.0",
+      "engineVersion": "1.53.0",
       "deployWarning": null
     },
     "description": "Build homes, roads, services, and production sites to meet residents' needs and fulfill trade orders.",
@@ -36,19 +36,19 @@
     "links": [],
     "isDisabled": false
   },
-  "publishedAt": "2026-11-26T22:18:32.921Z",
-  "sourceCommit": "5fe51ff8127bff7291608250c8380823b8014a4e",
-  "bytesReceived": 2251044,
-  "archiveSha256": "f195a16e0f490aa9f5bb27b87c9ccd013c0054ee47d0d23fbced87e0a407e809",
+  "publishedAt": "2026-11-27T17:07:37.431Z",
+  "sourceCommit": "fe6cd82fdceb8dbbc5e8ce2e94492d90db0d84b9",
+  "bytesReceived": 2251036,
+  "archiveSha256": "cfbe2a401729bf5d499b4cfc9889d34c57618db5104f9b8742a43c1899b05a16",
   "indexSha256": "68cf56480464461ad3fcc17e5ecf9fd3f862232d0a76dafa7b10323fe2b903bb",
   "result": {
     "clientPublished": true,
     "serverImageLoaded": false,
     "imageDigest": null,
-    "bytesReceived": 2251044,
+    "bytesReceived": 2251036,
     "mode": "replace",
     "filesRemoved": 0,
-    "engineVersion": "1.51.0",
+    "engineVersion": "1.53.0",
     "deployWarning": null
   },
   "liveVerification": {
