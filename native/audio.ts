@@ -31,10 +31,6 @@ export function loadSfx(): void {
   for (const name of new Set(Object.values(SAMPLES))) {
     loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => { console.warn(`sfx ${name}: ${e instanceof Error ? e.message : String(e)}`); });
   }
-  const failed = (e: unknown): void => { console.warn(`audio render: ${String(e)}`); };
-  renderPad().then((c) => { padClip = c; }, failed);
-  renderArp().then((c) => { arpClip = c; }, failed);
-  renderWind().then((c) => { ambClip = c; }, failed);
 }
 /** audio.js play(name). */
 export function play(name: Sfx): void {
@@ -178,7 +174,20 @@ export function setSuspended(on: boolean): void {
 }
 
 /** Each frame: the loops, once the mixer runs and the player has pressed something. */
+let __bedsStarted = false;
+function startBeds(): void {
+  if (__bedsStarted) return;
+  __bedsStarted = true;
+  void (async () => {
+    const failed = (e: unknown): void => { console.warn(`audio render: ${String(e)}`); };
+    renderPad().then((c) => { padClip = c; }, failed);
+    renderArp().then((c) => { arpClip = c; }, failed);
+    renderWind().then((c) => { ambClip = c; }, failed);
+  })();
+}
+
 export function update(): void {
+  startBeds();
   if (context.state !== "running" || !started) return;
   try {
     if (padClip && !padVoice) padVoice = playClip(padClip, { bus: "music", gain: suspended ? 0 : 1, loop: true });

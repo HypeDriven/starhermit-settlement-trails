@@ -10,3 +10,7 @@ LICENSE.md
 coverart.png
 sfx/manifest.json
 sfx/manifest.md
+
+# Monolith locale tables. The game loads assets/l10n/<kind>/<locale>.json.
+assets/localization/common.json
+assets/strings.json
